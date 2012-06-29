@@ -1,4 +1,4 @@
-/* 
+/*
  * Memalloc, encoder memory allocation driver (kernel module)
  *
  * Copyright (C) 2011  Hantro Products Oy.
@@ -68,10 +68,16 @@ MODULE_DESCRIPTION("RAM allocation");
 #define MEMALLOC_BASIC_AND_16K_STILL_OUTPUT 3
 #define MEMALLOC_BASIC_AND_MVC_DBP 4
 #define MEMALLOC_BASIC_AND_4K_OUTPUT 5
-#define MEMALLOC_ANDROID 11
+#define MEMALLOC_ANDROID_RGB565 11
+#define MEMALLOC_ANDROID_YUV420 12
+
+/* The base address of the memory block for the dedicated memory backend */
+unsigned int memalloc_memory_address = 0;
+module_param(memalloc_memory_address, uint, S_IRUSR | S_IWUSR | S_IWGRP | S_IRGRP | S_IROTH); /* rw-rw-r-- */
+MODULE_PARM_DESC(memalloc_memory_address, "The physical address to map for the dedicated Hantro/On2/Verisilicon memory backend");
 
 /* selects the memory allocation method, i.e. which allocation scheme table is used by default */
-unsigned int alloc_method = MEMALLOC_ANDROID;
+unsigned int alloc_method = MEMALLOC_ANDROID_YUV420;
 
 static int memalloc_major = 0;  /* dynamic */
 
@@ -266,6 +272,25 @@ unsigned int size_table_6[] = {
     1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024
 };
 
+unsigned int size_table_7[] = {
+    1, 1, 1, 1, 1, 1, 1, 1, 1,
+    4, 4, 4, 4, 4, 4, 4, 4,
+    10, 10, 10, 10,
+    22, 22, 22, 22,
+    38, 38, 38, 38, 38, 38, 38, 38, 38, 38, 38,
+    50, 50, 50, 50, 50, 50, 50,
+    75, 75, 75, 75, 75,
+    86, 86, 86, 86, 86,
+    113, 113,
+    152, 152,
+    162, 162, 162,
+    202, 202, 202,
+    403, 403, 403, 403, 403, 403,
+    450, 450, 450,
+    768, 768, 768, 768, 768, 768, 768, 768, 768, 768,
+    893, 893, 893, 893, 893, 893, 893, 893, 893
+};
+
 static hlina_chunk hlina_chunks[256];
 
 static int AllocMemory(unsigned *busaddr, unsigned int size, struct file *filp);
@@ -410,7 +435,10 @@ int __init memalloc_init(void)
 
     PDEBUG("module init\n");
     printk("memalloc: 8190 Linear Memory Allocator, %s \n", "$Revision: 1.14 $");
+	if (memalloc_memory_address <= 0)
     printk("memalloc: default linear memory base = 0x%08x \n", HLINA_START_ADDRESS);
+	else
+		printk("memalloc: linear memory base = 0x%08x \n", memalloc_memory_address);
 
     switch (alloc_method)
     {
@@ -440,10 +468,15 @@ int __init memalloc_init(void)
         chunks = (sizeof(size_table_5) / sizeof(*size_table_5));
         printk(KERN_INFO "memalloc: allocation method: MEMALLOC_BASIC_AND_4K_OUTPUT\n");
         break;
-    case MEMALLOC_ANDROID:
+    case MEMALLOC_ANDROID_RGB565:
         size_table = size_table_6;
         chunks = (sizeof(size_table_6) / sizeof(*size_table_6));
-        printk(KERN_INFO "memalloc: allocation method: MEMALLOC_ANDROID\n");
+        printk(KERN_INFO "memalloc: allocation method: MEMALLOC_ANDROID_RGB565\n");
+        break;
+    case MEMALLOC_ANDROID_YUV420:
+        size_table = size_table_7;
+        chunks = (sizeof(size_table_7) / sizeof(*size_table_7));
+        printk(KERN_INFO "memalloc: allocation method: MEMALLOC_ANDROID_YUV420\n");
         break;
     default:
         size_table = size_table_0;
@@ -547,7 +580,12 @@ static int FreeMemory(unsigned long busaddr)
 void ResetMems(void)
 {
     int i = 0;
-    unsigned int ba = HLINA_START_ADDRESS;
+    unsigned int ba;
+
+    if (memalloc_memory_address <= 0) {
+        memalloc_memory_address = HLINA_START_ADDRESS;
+    }
+    ba = memalloc_memory_address;
 
     for(i = 0; i < chunks; i++)
     {
@@ -561,10 +599,10 @@ void ResetMems(void)
     }
 
     printk("memalloc: %d bytes (%dMB) configured. Check RAM size!\n",
-           ba - (unsigned int)(HLINA_START_ADDRESS),
-          (ba - (unsigned int)(HLINA_START_ADDRESS)) / (1024 * 1024));
+	    ba - (unsigned int)(memalloc_memory_address),
+	   (ba - (unsigned int)(memalloc_memory_address)) / (1024 * 1024));
 
-    if(ba - (unsigned int)(HLINA_START_ADDRESS) > 96 * 1024 * 1024)
+    if(ba - (unsigned int)(memalloc_memory_address) > 96 * 1024 * 1024)
     {
         PDEBUG("MEMALLOC ERROR: MEMORY ALLOC BUG\n");
     }

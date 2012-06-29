@@ -3,7 +3,7 @@ ifeq ($(TARGET_BOARD_PLATFORM),SPEAr1340)
 LOCAL_PATH := $(call my-dir)
 
 include $(CLEAR_VARS)
-LOCAL_MODULE := memalloc_load.sh
+LOCAL_MODULE := hx280_load.sh
 LOCAL_MODULE_TAGS := debug eng optional
 LOCAL_MODULE_CLASS := ETC
 LOCAL_MODULE_PATH := $(TARGET_OUT)/spear
@@ -17,19 +17,19 @@ export ANDROID_ROOT=$(ANDROID_BUILD_TOP)
 export CROSS_COMPILE=$(ANDROID_ROOT)/prebuilt/linux-x86/toolchain/arm-eabi-4.4.3/bin/arm-eabi-
 export KDIR=$(ANDROID_ROOT)/kernel
 
-MEMALLOC_PATH := $(LOCAL_PATH)
+HX280_PATH := $(LOCAL_PATH)
 
-module := memalloc.ko
+module := hx280enc.ko
 cleanup := $(LOCAL_PATH)/dummy
 
 .PHONY := $(module) $(cleanup)
 
 $(cleanup):
-	$(MAKE) -C $(MEMALLOC_PATH) clean
+	$(MAKE) -C $(HX280_PATH) clean
 
 $(LOCAL_PATH)/$(module): $(cleanup)
   #cd $(LOCAL_PATH)
-	$(MAKE) -C $(MEMALLOC_PATH)
+	$(MAKE) -C $(HX280_PATH)
 	#$(CROSS_COMPILE)strip -g -S -d  $(module)
 
 LOCAL_MODULE :=  $(module)

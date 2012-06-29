@@ -1,10 +1,9 @@
-
 ifneq ($(TARGET_SIMULATOR),true)
 ifeq ($(TARGET_BOARD_PLATFORM),SPEAr1340)
 LOCAL_PATH := $(call my-dir)
 
 include $(CLEAR_VARS)
-LOCAL_MODULE := driver_load.sh
+LOCAL_MODULE := hx170_load.sh
 LOCAL_MODULE_TAGS := debug eng optional
 LOCAL_MODULE_CLASS := ETC
 LOCAL_MODULE_PATH := $(TARGET_OUT)/spear
@@ -15,7 +14,7 @@ include $(CLEAR_VARS)
 export ARCH=arm
 export ANDROID_ROOT=$(ANDROID_BUILD_TOP)
 #export ANDROID_ROOT=$(CURDIR)
-export CROSS_COMPILE=$(ANDROID_ROOT)/prebuilt/linux-x86/toolchain/arm-eabi-4.4.0/bin/arm-eabi-
+export CROSS_COMPILE=$(ANDROID_ROOT)/prebuilt/linux-x86/toolchain/arm-eabi-4.4.3/bin/arm-eabi-
 export KDIR=$(ANDROID_ROOT)/kernel
 
 HX170_PATH := $(LOCAL_PATH)

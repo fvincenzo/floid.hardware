@@ -65,6 +65,7 @@ MODULE_DESCRIPTION("driver module for 8170/81990 Hantro decoder/pp");
 
 /* Logic module base address for SPEAr1340 */
 #define HXDEC_LOGIC_MODULE0_BASE   0xEBD00000
+
 #define VP_PB_INT_LT                    113
 
 #define INT_EXPINT1                     10

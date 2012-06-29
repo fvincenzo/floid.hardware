@@ -15,6 +15,9 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+//#define LOG_NDEBUG 0
+#define LOG_TAG "SPEAr1340OMXPlugin"
+#include <utils/Log.h>
 
 #include <dlfcn.h>
 #include <media/stagefright/HardwareAPI.h>
@@ -25,13 +28,18 @@
 namespace android
 {
 
-    OMXPluginBase *createOMXPlugin ()
+    extern OMXPluginBase *createOMXPlugin ()
     {
         return new SPEAr1340OMXPlugin;
     }
 
+    extern void destroyOMXPlugin(OMXPluginBase *plugin)
+    {
+        delete plugin;
+    }
+
     SPEAr1340OMXPlugin::SPEAr1340OMXPlugin ()
-        : mLibHandle (dlopen ("/system/lib/libomxil-bellagio_lib.so", RTLD_NOW)),
+        : mLibHandle (dlopen ("/system/lib/libhantro_omx_core.so", RTLD_NOW)),
         mInit (NULL),
         mDeinit (NULL),
         mComponentNameEnum (NULL),
@@ -40,21 +48,6 @@ namespace android
         mGetRolesOfComponentHandle (NULL)
     {
         if (mLibHandle != NULL) {
-            mInit = (InitFunc) dlsym (mLibHandle, "OMX_Init");
-            mDeinit = (DeinitFunc) dlsym (mLibHandle, "OMX_DeInit");
-
-            mComponentNameEnum = (ComponentNameEnumFunc) dlsym (mLibHandle, "OMX_ComponentNameEnum");
-
-            mGetHandle = (GetHandleFunc) dlsym (mLibHandle, "OMX_GetHandle");
-            mFreeHandle = (FreeHandleFunc) dlsym (mLibHandle, "OMX_FreeHandle");
-
-            mGetRolesOfComponentHandle =
-                (GetRolesOfComponentFunc) dlsym (mLibHandle,
-                "OMX_GetRolesOfComponent");
-
-            (*mInit) ();
-        }
-        else if((mLibHandle = (dlopen ("/system/lib/libhantro_omx_core.so", RTLD_NOW))) != NULL){
             mInit = (InitFunc) dlsym (mLibHandle, "hantro_OMX_Init");
             mDeinit = (DeinitFunc) dlsym (mLibHandle, "hantro_OMX_DeInit");
 
@@ -68,7 +61,8 @@ namespace android
                 "hantro_OMX_GetRolesOfComponent");
 
             (*mInit) ();
-       }
+            LOGD("Sucessfully allocated and initialized OMX plugin");
+        }
     }
 
     SPEAr1340OMXPlugin::~SPEAr1340OMXPlugin () {
@@ -145,7 +139,7 @@ namespace android
 
             for (OMX_U32 i = 0; i < numRoles; ++i) {
                 String8 s ((const char *) array[i]);
-
+                LOGD("role: %s", s.string());
                 roles->push (s);
 
                 delete[]array[i];

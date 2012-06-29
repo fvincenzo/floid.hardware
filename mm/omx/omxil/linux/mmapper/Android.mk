@@ -1,4 +1,3 @@
-
 ifneq ($(TARGET_SIMULATOR),true)
 ifeq ($(TARGET_BOARD_PLATFORM),SPEAr1340)
 LOCAL_PATH := $(call my-dir)
@@ -7,7 +6,7 @@ include $(CLEAR_VARS)
 export ARCH=arm
 export ANDROID_ROOT=$(ANDROID_BUILD_TOP)
 #export ANDROID_ROOT=$(CURDIR)
-export CROSS_COMPILE=$(ANDROID_ROOT)/prebuilt/linux-x86/toolchain/arm-eabi-4.4.0/bin/arm-eabi-
+export CROSS_COMPILE=$(ANDROID_ROOT)/prebuilt/linux-x86/toolchain/arm-eabi-4.4.3/bin/arm-eabi-
 export KDIR=$(ANDROID_ROOT)/kernel
 
 MMAPPER_PATH := $(LOCAL_PATH)

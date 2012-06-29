@@ -19,8 +19,7 @@ LOCAL_PATH := $(call my-dir)
 include $(CLEAR_VARS)
 
 LOCAL_SRC_FILES := \
-    SPEAr1340OMXPlugin.cpp                      \
-    SPEAr1340HardwareRenderer.cpp
+    SPEAr1340OMXPlugin.cpp
 
 LOCAL_C_INCLUDES:= \
         $(TOP)/frameworks/base/include/media/stagefright/openmax \
@@ -29,7 +28,6 @@ LOCAL_C_INCLUDES:= \
 LOCAL_SHARED_LIBRARIES :=       \
         libbinder               \
         libutils                \
-        libcutils               \
         libdl                   \
         libui                   \
         libsurfaceflinger_client

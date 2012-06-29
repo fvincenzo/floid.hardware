@@ -19,6 +19,7 @@
 #ifndef SPEAR_1340_OMX_PLUGIN_H_
 #define SPEAR_1340_OMX_PLUGIN_H_
 
+#include <media/stagefright/foundation/ABase.h>
 #include <media/stagefright/OMXPluginBase.h>
 
 namespace android
@@ -70,8 +71,7 @@ namespace android
         FreeHandleFunc mFreeHandle;
         GetRolesOfComponentFunc mGetRolesOfComponentHandle;
 
-        SPEAr1340OMXPlugin (const SPEAr1340OMXPlugin &);
-        SPEAr1340OMXPlugin & operator= (const SPEAr1340OMXPlugin &);
+        DISALLOW_EVIL_CONSTRUCTORS(SPEAr1340OMXPlugin);
     };
 
 } // namespace android

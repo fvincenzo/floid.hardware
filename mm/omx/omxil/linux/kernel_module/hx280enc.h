@@ -1,5 +1,5 @@
 /* 
- * Allocate memory blocks (module header)
+ * Encoder device driver (kernel module header)
  *
  * Copyright (C) 2012 Google Finland Oy.
  *
@@ -19,34 +19,37 @@
  *
 --------------------------------------------------------------------------------
 --
---  Abstract :
+--  Abstract : 6280/7280/8270/8290 Encoder device driver (kernel module)
 --
 ------------------------------------------------------------------------------*/
 
-#ifndef _HMP4ENC_H_
-#define _HMP4ENC_H_
+#ifndef _HX280ENC_H_
+#define _HX280ENC_H_
 #include <linux/ioctl.h>    /* needed for the _IOW etc stuff used later */
+
 /*
  * Macros to help debugging
  */
 
 #undef PDEBUG   /* undef it, just in case */
-#ifdef MEMALLOC_DEBUG
+#ifdef HX280ENC_DEBUG
 #  ifdef __KERNEL__
     /* This one if debugging is on, and kernel space */
-#    define PDEBUG(fmt, args...) printk( KERN_INFO "memalloc: " fmt, ## args)
+#    define PDEBUG(fmt, args...) printk( KERN_INFO "hmp4e: " fmt, ## args)
 #  else
     /* This one for user space */
-#    define PDEBUG(fmt, args...) fprintf(stderr, fmt, ## args)
+#    define PDEBUG(fmt, args...) printf(__FILE__ ":%d: " fmt, __LINE__ , ## args)
 #  endif
 #else
 #  define PDEBUG(fmt, args...)  /* not debugging: nothing */
 #endif
+
 /*
  * Ioctl definitions
  */
+
 /* Use 'k' as magic number */
-#define MEMALLOC_IOC_MAGIC  'k'
+#define HX280ENC_IOC_MAGIC  'k'
 /*
  * S means "Set" through a ptr,
  * T means "Tell" directly with the argument value
@@ -55,17 +58,18 @@
  * X means "eXchange": G and S atomically
  * H means "sHift": T and Q atomically
  */
-#define MEMALLOC_IOCXGETBUFFER         _IOWR(MEMALLOC_IOC_MAGIC,  1, unsigned long)
-#define MEMALLOC_IOCSFREEBUFFER        _IOW(MEMALLOC_IOC_MAGIC,  2, unsigned long)
+ /*
+  * #define HX280ENC_IOCGBUFBUSADDRESS _IOR(HX280ENC_IOC_MAGIC,  1, unsigned long *)
+  * #define HX280ENC_IOCGBUFSIZE       _IOR(HX280ENC_IOC_MAGIC,  2, unsigned int *)
+  */
+#define HX280ENC_IOCGHWOFFSET      _IOR(HX280ENC_IOC_MAGIC,  3, unsigned long *)
+#define HX280ENC_IOCGHWIOSIZE      _IOR(HX280ENC_IOC_MAGIC,  4, unsigned int *)
+#define HX280ENC_IOC_CLI           _IO(HX280ENC_IOC_MAGIC,  5)
+#define HX280ENC_IOC_STI           _IO(HX280ENC_IOC_MAGIC,  6)
+#define HX280ENC_IOCXVIRT2BUS      _IOWR(HX280ENC_IOC_MAGIC,  7, unsigned long *)
 
-/* ... more to come */
-#define MEMALLOC_IOCHARDRESET       _IO(MEMALLOC_IOC_MAGIC, 15) /* debugging tool */
-#define MEMALLOC_IOC_MAXNR 15
+#define HX280ENC_IOCHARDRESET      _IO(HX280ENC_IOC_MAGIC, 8)   /* debugging tool */
 
-typedef struct
-{
-    unsigned busAddress;
-    unsigned size;
-}MemallocParams;
+#define HX280ENC_IOC_MAXNR 8
 
-#endif /* _HMP4ENC_H_ */
+#endif /* !_HX280ENC_H_ */
