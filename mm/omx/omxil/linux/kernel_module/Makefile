@@ -55,7 +55,7 @@ CC += -I$(obj)
 EXTRA_CFLAGS += -g
 
 # Print debugging messages from the device 
-EXTRA_CFLAGS	+= -DHX280ENC_DEBUG
+# EXTRA_CFLAGS	+= -DHX280ENC_DEBUG
 
 snapshot := $(wildcard $(obj)/.snapshot)
 ifneq ($(snapshot),)
