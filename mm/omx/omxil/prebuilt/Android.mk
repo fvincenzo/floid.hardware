@@ -1,6 +1,6 @@
 
 ifneq ($(TARGET_SIMULATOR),true)
-ifeq ($(TARGET_BOARD_PLATFORM),SPEAr1340)
+ifeq ($(TARGET_BOARD_PLATFORM),iris)
 LOCAL_PATH := $(call my-dir)
 
 include $(CLEAR_VARS)
