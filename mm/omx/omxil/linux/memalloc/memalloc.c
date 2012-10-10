@@ -45,9 +45,6 @@
 /* for current pid */
 #include <linux/sched.h>
 
-/* different kernel versions have different ioctl in include/fs/vfs.h */
-#include <linux/version.h>
-
 /* Our header */
 #include "memalloc.h"
 
@@ -57,27 +54,33 @@ MODULE_AUTHOR("Hantro Products Oy");
 MODULE_DESCRIPTION("RAM allocation");
 
 #ifndef HLINA_START_ADDRESS
-#define HLINA_START_ADDRESS 0x36600000 /* SPEAr1340: start at 870M (UMP+MALI from 960M to 1024M) */
+#define HLINA_START_ADDRESS 0x37900000 /* SPEAr1340: start at 870M (UMP+MALI from 960M to 1024M) */
 #endif
 
 #define MAX_OPEN 32
 #define ID_UNUSED 0xFF
+/* the size of chunk in MEMALLOC_DYNAMIC */
+#define CHUNK_SIZE 1
 #define MEMALLOC_BASIC 0
 #define MEMALLOC_MAX_OUTPUT 1
 #define MEMALLOC_BASIC_X2 2
 #define MEMALLOC_BASIC_AND_16K_STILL_OUTPUT 3
 #define MEMALLOC_BASIC_AND_MVC_DBP 4
 #define MEMALLOC_BASIC_AND_4K_OUTPUT 5
+#define MEMALLOC_DYNAMIC 6
 #define MEMALLOC_ANDROID_RGB565 11
 #define MEMALLOC_ANDROID_YUV420 12
 
-/* The base address of the memory block for the dedicated memory backend */
-unsigned int memalloc_memory_address = 0;
-module_param(memalloc_memory_address, uint, S_IRUSR | S_IWUSR | S_IWGRP | S_IRGRP | S_IROTH); /* rw-rw-r-- */
-MODULE_PARM_DESC(memalloc_memory_address, "The physical address to map for the dedicated Hantro/On2/Verisilicon memory backend");
+/* selects the memory allocation method, i.e. which allocation scheme table is used */
+unsigned int alloc_method = MEMALLOC_DYNAMIC;
 
-/* selects the memory allocation method, i.e. which allocation scheme table is used by default */
-unsigned int alloc_method = MEMALLOC_ANDROID_YUV420;
+/* memory size in MBs for MEMALLOC_DYNAMIC */
+unsigned int alloc_size = 55;
+
+//#define DEBUG_MEM_ALLOCATED
+#ifdef DEBUG_MEM_ALLOCATED
+static unsigned allocated_size = 0;
+#endif
 
 static int memalloc_major = 0;  /* dynamic */
 
@@ -85,6 +88,7 @@ int id[MAX_OPEN] = { ID_UNUSED };
 
 /* module_param(name, type, perm) */
 module_param(alloc_method, uint, 0);
+module_param(alloc_size, uint, 0);
 
 /* here's all the must remember stuff */
 struct allocation
@@ -97,13 +101,17 @@ struct allocation
 
 struct list_head heap_list;
 
-static spinlock_t mem_lock = SPIN_LOCK_UNLOCKED;
+/*static spinlock_t mem_lock = SPIN_LOCK_UNLOCKED; */
+DEFINE_SPINLOCK(mem_lock);
+
 
 typedef struct hlinc
 {
     unsigned int bus_address;
     unsigned int used;
     unsigned int size;
+    /* how many chunks are reserved so we can free right amount chunks */
+    unsigned int chunks_reserved;
     int file_id;
 } hlina_chunk;
 
@@ -291,29 +299,23 @@ unsigned int size_table_7[] = {
     893, 893, 893, 893, 893, 893, 893, 893, 893
 };
 
-static hlina_chunk hlina_chunks[256];
+/*static hlina_chunk hlina_chunks[256];*/
+/* maximum for 448 MB with 1*4096 sized chunks*/
+static hlina_chunk hlina_chunks[114688]; 
 
 static int AllocMemory(unsigned *busaddr, unsigned int size, struct file *filp);
 static int FreeMemory(unsigned long busaddr);
 static void ResetMems(void);
 
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,36))
-static int memalloc_ioctl(struct inode *inode, struct file *filp,
+static int memalloc_ioctl( struct file *filp,
                           unsigned int cmd, unsigned long arg)
-#else
-/* From Linux 2.6.36 the locked ioctl was removed in favor of unlocked one */
-static long memalloc_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
-#endif
 {
     int err = 0;
     int ret;
 
     PDEBUG("ioctl cmd 0x%08x\n", cmd);
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,36))
-    if(inode == NULL || filp == NULL || arg == 0)
-#else
-    if(filp == NULL || arg == 0)
-#endif
+
+    if( filp == NULL || arg == 0)
     {
         return -EFAULT;
     }
@@ -409,6 +411,7 @@ static int memalloc_release(struct inode *inode, struct file *filp)
         {
             hlina_chunks[i].used = 0;
             hlina_chunks[i].file_id = ID_UNUSED;
+            hlina_chunks[i].chunks_reserved = 0;
         }
     }
     *((int *) filp->private_data) = ID_UNUSED;
@@ -420,25 +423,17 @@ static int memalloc_release(struct inode *inode, struct file *filp)
 static struct file_operations memalloc_fops = {
   open:memalloc_open,
   release:memalloc_release,
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,36))
-  ioctl:memalloc_ioctl,
-#else
-  /* From Linux 2.6.36 the locked ioctl was removed */
   unlocked_ioctl:memalloc_ioctl,
-#endif
 };
 
 int __init memalloc_init(void)
 {
-    int result;
+    int result = 0;
     int i = 0;
 
     PDEBUG("module init\n");
     printk("memalloc: 8190 Linear Memory Allocator, %s \n", "$Revision: 1.14 $");
-	if (memalloc_memory_address <= 0)
-    printk("memalloc: default linear memory base = 0x%08x \n", HLINA_START_ADDRESS);
-	else
-		printk("memalloc: linear memory base = 0x%08x \n", memalloc_memory_address);
+    printk("memalloc: linear memory base = 0x%08x \n", HLINA_START_ADDRESS);
 
     switch (alloc_method)
     {
@@ -467,6 +462,20 @@ int __init memalloc_init(void)
         size_table = size_table_5;
         chunks = (sizeof(size_table_5) / sizeof(*size_table_5));
         printk(KERN_INFO "memalloc: allocation method: MEMALLOC_BASIC_AND_4K_OUTPUT\n");
+        break;
+    case MEMALLOC_DYNAMIC:
+        chunks = (alloc_size*1024*1024)/(4096*CHUNK_SIZE);
+        printk(KERN_INFO "memalloc: allocation method: MEMALLOC_DYNAMIC; size %d MB; chunks %d of size %d\n", alloc_size, chunks, CHUNK_SIZE);
+        size_table = (unsigned int *) kmalloc(chunks*sizeof(unsigned int), GFP_USER);
+        if (size_table == NULL)
+        {
+            printk(KERN_ERR "memalloc: cannot allocate size_table for MEMALLOC_DYNAMIC\n");
+            goto err;
+        }
+        for (i = 0; i < chunks; ++i)
+        {
+            size_table[i] = CHUNK_SIZE;
+        }
         break;
     case MEMALLOC_ANDROID_RGB565:
         size_table = size_table_6;
@@ -517,6 +526,9 @@ void __exit memalloc_cleanup(void)
 
     PDEBUG("clenup called\n");
 
+    if (alloc_method == MEMALLOC_DYNAMIC && size_table != NULL)
+        kfree(size_table);
+
     unregister_chrdev(memalloc_major, "memalloc");
 
     PDEBUG("memalloc: module removed\n");
@@ -531,18 +543,92 @@ static int AllocMemory(unsigned *busaddr, unsigned int size, struct file *filp)
 {
 
     int i = 0;
-
+    int j = 0;
+    unsigned int skip_chunks = 0;
+    unsigned int size_reserved = 0;
     *busaddr = 0;
 
-    for(i = 0; i < chunks; i++)
+    if (alloc_method == MEMALLOC_DYNAMIC)
     {
-
-        if(!hlina_chunks[i].used && (hlina_chunks[i].size >= size))
+        /* calculate how many chunks we need */
+        unsigned int alloc_chunks = size/(CHUNK_SIZE*4096) + 1;
+#ifdef DEBUG_MEM_ALLOCATED
+	allocated_size += alloc_chunks * (CHUNK_SIZE * 4096); 
+#endif
+        
+        /* run through the chunk table */
+        for(i = 0; i < chunks; i++)
         {
-            *busaddr = hlina_chunks[i].bus_address;
-            hlina_chunks[i].used = 1;
-            hlina_chunks[i].file_id = *((int *) (filp->private_data));
-            break;
+            skip_chunks = 0;
+            /* if this chunk is available */
+            if(!hlina_chunks[i].used)
+            {
+                /* check that there is enough memory left */
+                if (i + alloc_chunks > chunks)
+                    break;
+                
+                /* check that there is enough consecutive chunks available */
+#if 0                
+                if (hlina_chunks[i + alloc_chunks - 1].used)
+                {
+                    skip_chunks = 1;
+                    /* continue from the next chunk after used */
+                    i = i + alloc_chunks;
+                    break;
+                }
+#endif
+#if 1            
+                for (j = i; j < i + alloc_chunks; j++)
+                {
+                    if (hlina_chunks[j].used)
+                    {
+                        skip_chunks = 1;
+                        /* skip the used chunks */
+                        i = j + hlina_chunks[j].chunks_reserved - 1;
+		                break;
+                    }
+                }
+#endif
+                
+                /* if enough free memory found */
+                if (!skip_chunks)
+                {
+#if 0
+                    /* mark the chunks used and return bus address to first chunk */
+                    for (j = i; j < i + alloc_chunks; j++)
+                    {
+                        hlina_chunks[j].used = 1;
+                        hlina_chunks[j].file_id = *((int *) (filp->private_data));
+                    }
+#endif
+                    *busaddr = hlina_chunks[i].bus_address;
+                    hlina_chunks[i].used = 1;
+                    hlina_chunks[i].file_id = *((int *) (filp->private_data));
+                    hlina_chunks[i].chunks_reserved = alloc_chunks;
+                    size_reserved = hlina_chunks[i].chunks_reserved*CHUNK_SIZE*4096;
+                    break;
+                }
+            }
+            else
+            {
+                /* skip the used chunks */
+                i += hlina_chunks[i].chunks_reserved - 1;
+            }
+        }
+    }
+    else
+    {
+        for(i = 0; i < chunks; i++)
+        {
+
+            if(!hlina_chunks[i].used && (hlina_chunks[i].size >= size))
+            {
+                *busaddr = hlina_chunks[i].bus_address;
+                hlina_chunks[i].used = 1;
+                hlina_chunks[i].file_id = *((int *) (filp->private_data));
+                size_reserved = hlina_chunks[i].size;
+                break;
+            }
         }
     }
 
@@ -550,11 +636,13 @@ static int AllocMemory(unsigned *busaddr, unsigned int size, struct file *filp)
     {
         printk("memalloc: Allocation FAILED: size = %d\n", size);
     }
+#ifdef DEBUG_MEM_ALLOCATED
     else
     {
-        PDEBUG("MEMALLOC OK: size: %d, size reserved: %d\n", size,
-               hlina_chunks[i].size);
+        printk("MEMALLOC OK: size: %d, size reserved: %d, total allocated memory = %d MB\n", size,
+               size_reserved, allocated_size / (1024 * 1024));
     }
+#endif
 
     return 0;
 }
@@ -564,14 +652,44 @@ static int FreeMemory(unsigned long busaddr)
 {
     int i = 0;
 
-    for(i = 0; i < chunks; i++)
+    if (alloc_method == MEMALLOC_DYNAMIC)
     {
-        if(hlina_chunks[i].bus_address == busaddr)
+        for(i = 0; i < chunks; i++)
         {
-            hlina_chunks[i].used = 0;
-            hlina_chunks[i].file_id = ID_UNUSED;
+            if(hlina_chunks[i].bus_address == busaddr)
+            {
+#if 0
+                for (j = i; j < i + hlina_chunks[i].chunks_reserved; j++)
+                {
+                    hlina_chunks[j].used = 0;
+                    hlina_chunks[j].file_id = ID_UNUSED;
+                }
+#endif
+#ifdef DEBUG_MEM_ALLOCATED
+		allocated_size -= hlina_chunks[i].chunks_reserved * (CHUNK_SIZE*4096);
+#endif
+                hlina_chunks[i].used = 0;
+                hlina_chunks[i].file_id = ID_UNUSED;
+                hlina_chunks[i].chunks_reserved = 0;
+                break;      
+            }
         }
     }
+    else
+    {
+        for(i = 0; i < chunks; i++)
+        {
+            if(hlina_chunks[i].bus_address == busaddr)
+            {
+               hlina_chunks[i].used = 0;
+               hlina_chunks[i].file_id = ID_UNUSED;
+               break;
+            }
+        }
+    }
+#ifdef DEBUG_MEM_ALLOCATED
+    printk("FreeMemory allocated memory = %d MB\n", allocated_size / (1024 * 1024));
+#endif
 
     return 0;
 }
@@ -580,12 +698,7 @@ static int FreeMemory(unsigned long busaddr)
 void ResetMems(void)
 {
     int i = 0;
-    unsigned int ba;
-
-    if (memalloc_memory_address <= 0) {
-        memalloc_memory_address = HLINA_START_ADDRESS;
-    }
-    ba = memalloc_memory_address;
+    unsigned int ba = HLINA_START_ADDRESS;
 
     for(i = 0; i < chunks; i++)
     {
@@ -594,15 +707,16 @@ void ResetMems(void)
         hlina_chunks[i].used = 0;
         hlina_chunks[i].file_id = ID_UNUSED;
         hlina_chunks[i].size = 4096 * size_table[i];
+        hlina_chunks[i].chunks_reserved = 0;
 
         ba += hlina_chunks[i].size;
     }
 
     printk("memalloc: %d bytes (%dMB) configured. Check RAM size!\n",
-	    ba - (unsigned int)(memalloc_memory_address),
-	   (ba - (unsigned int)(memalloc_memory_address)) / (1024 * 1024));
+           ba - (unsigned int)(HLINA_START_ADDRESS),
+          (ba - (unsigned int)(HLINA_START_ADDRESS)) / (1024 * 1024));
 
-    if(ba - (unsigned int)(memalloc_memory_address) > 96 * 1024 * 1024)
+    if(ba - (unsigned int)(HLINA_START_ADDRESS) > 96 * 1024 * 1024)
     {
         PDEBUG("MEMALLOC ERROR: MEMORY ALLOC BUG\n");
     }

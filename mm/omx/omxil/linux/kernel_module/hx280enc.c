@@ -281,7 +281,6 @@ static struct file_operations hx280enc_fops = {
 int __init hx280enc_init_SPEAr1340(void)
 {
     int result;
-    u32  *reg;
 
     u32 * PERIP3_CLK_ENB;
     u32 * PERIP3_SW_RST;

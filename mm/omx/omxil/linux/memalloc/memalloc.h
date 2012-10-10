@@ -62,8 +62,7 @@
 #define MEMALLOC_IOCHARDRESET       _IO(MEMALLOC_IOC_MAGIC, 15) /* debugging tool */
 #define MEMALLOC_IOC_MAXNR 15
 
-typedef struct
-{
+typedef struct {
     unsigned busAddress;
     unsigned size;
 }MemallocParams;
