@@ -54,7 +54,7 @@ MODULE_AUTHOR("Hantro Products Oy");
 MODULE_DESCRIPTION("RAM allocation");
 
 #ifndef HLINA_START_ADDRESS
-#define HLINA_START_ADDRESS 0x19B00000 /* SPEAr1340: start at 411 MB */
+#define HLINA_START_ADDRESS 0x18C00000 /* SPEAr1340: start at 396 MB */
 #endif
 
 #define MAX_OPEN 32
@@ -75,7 +75,7 @@ MODULE_DESCRIPTION("RAM allocation");
 unsigned int alloc_method = MEMALLOC_DYNAMIC;
 
 /* memory size in MBs for MEMALLOC_DYNAMIC */
-unsigned int alloc_size = 50;
+unsigned int alloc_size = 52;
 
 //#define DEBUG_MEM_ALLOCATED
 #ifdef DEBUG_MEM_ALLOCATED
