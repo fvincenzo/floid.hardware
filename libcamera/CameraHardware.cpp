@@ -215,7 +215,8 @@ namespace android {
                 buffer_handle_t *buf_handle;
                 if ((err = mNativeWindow->dequeue_buffer(mNativeWindow,&buf_handle,&stride)) != 0) {
                     LOGW("Surface::dequeueBuffer returned error %d", err);
-                    return -1;
+                    mLock.unlock();
+                    return err;
                 }
                 mNativeWindow->lock_buffer(mNativeWindow, buf_handle);
                 GraphicBufferMapper &mapper = GraphicBufferMapper::get();
