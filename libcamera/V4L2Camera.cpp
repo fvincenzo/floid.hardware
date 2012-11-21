@@ -203,6 +203,20 @@ void * V4L2Camera::GrabPreviewFrame()
     return video->mem[video->buf.index];
 }
 
+void * V4L2Camera::GrabPreviewFrame(size_t &bytesused)
+{
+    video->buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+    video->buf.memory = V4L2_MEMORY_MMAP;
+
+    if (ioctl(fd, VIDIOC_DQBUF, &video->buf) < 0) {
+        LOGE("%s: VIDIOC_DQBUF Failed", __func__);
+        return NULL;
+    }
+    nDequeued++;
+    bytesused = video->buf.bytesused;
+    return video->mem[video->buf.index];
+}
+
 void V4L2Camera::ReleasePreviewFrame()
 {
     if (ioctl(fd, VIDIOC_QBUF, &video->buf) < 0)
@@ -219,8 +233,108 @@ sp<IMemory> V4L2Camera::GrabRawFrame ()
     return memBase;
 }
 
-camera_memory_t* V4L2Camera::GrabJpegFrame(camera_request_memory mRequestMemory)
+camera_memory_t* V4L2Camera::GrabJpegFrame(camera_request_memory mRequestMemory, int& mfilesize, 
+					   int picture_quality)
 {
+    unsigned long fileSize = 0;
+    camera_memory_t* picture;
+
+    LOGI("%s", __func__);
+
+    video->buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+    video->buf.memory = V4L2_MEMORY_MMAP;
+    do {
+    	if (ioctl(fd, VIDIOC_DQBUF, &video->buf) < 0) {
+            LOGE("%s: VIDIOC_DQBUF Failed", __func__);
+            return NULL;
+        }
+    	nDequeued++;
+
+    	size_t bytesused = video->buf.bytesused;
+    	char *tempBuf = new char[bytesused];
+
+    	MemoryStream strm(tempBuf, bytesused);
+    	saveYUYV2JPEG((unsigned char *)video->mem[video->buf.index],
+                   video->width, video->height, strm, picture_quality);
+   	strm.closeStream();
+
+    	size_t fileSize = strm.getOffset();
+    	picture = mRequestMemory(-1,fileSize,1,NULL);
+
+	mfilesize = fileSize;
+    	memcpy(picture->data, tempBuf, fileSize);
+    	delete[] tempBuf;
+
+    	if (ioctl(fd, VIDIOC_QBUF, &video->buf) < 0) {
+            LOGE("%s: VIDIOC_QBUF Failed", __func__);
+            return NULL;
+        }
+    	nQueued++;
+	break;
+    } while (0);
+    return picture;
+}
+
+camera_memory_t* V4L2Camera::GrabJpegFrame(camera_request_memory mRequestMemory, int& mfilesize, 
+					   int picture_quality, int thumbWidth, int thumbHeight, 
+					   camera_memory_t **thumb, int &thumb_size, 
+					   int thumb_quality)
+{
+    unsigned long fileSize = 0;
+    camera_memory_t* picture;
+
+    LOGI("%s", __func__);
+
+    video->buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+    video->buf.memory = V4L2_MEMORY_MMAP;
+    do {
+        if (ioctl(fd, VIDIOC_DQBUF, &video->buf) < 0) {
+            LOGE("%s: VIDIOC_DQBUF Failed", __func__);
+            return NULL;
+        }
+        nDequeued++;
+
+        size_t bytesused = video->buf.bytesused;
+        char *tempBuf = new char[bytesused];
+
+        MemoryStream strm(tempBuf, bytesused);
+        saveYUYV2JPEG((unsigned char *)video->mem[video->buf.index],
+                   video->width, video->height, strm, picture_quality);
+        strm.closeStream();
+
+        size_t fileSize = strm.getOffset();
+        picture = mRequestMemory(-1,fileSize,1,NULL);
+
+        mfilesize = fileSize;
+        memcpy(picture->data, tempBuf, fileSize);
+        delete[] tempBuf;
+////////////////////////
+	char *tempThumb = new char[bytesused];
+	MemoryStream strmThumb(tempThumb, bytesused);
+	saveYUYV2JPEG((unsigned char *)video->mem[video->buf.index],
+                   thumbWidth, thumbHeight, strmThumb, thumb_quality);
+        strmThumb.closeStream();
+	thumb_size = strmThumb.getOffset();
+	*thumb = mRequestMemory(-1, thumb_size, 1, NULL);
+	memcpy((*thumb)->data, tempThumb, thumb_size);
+	delete[] tempThumb;
+
+////////////////////////
+        if (ioctl(fd, VIDIOC_QBUF, &video->buf) < 0) {
+            LOGE("%s: VIDIOC_QBUF Failed", __func__);
+            return NULL;
+        }
+        nQueued++;
+        break;
+    } while (0);
+    return picture;
+}
+
+
+void V4L2Camera::GrabRawFrame(void* pRawBuffer)
+{
+    camera_memory_t* picture;
+
     LOGI("%s", __func__);
 
     video->buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
@@ -228,30 +342,11 @@ camera_memory_t* V4L2Camera::GrabJpegFrame(camera_request_memory mRequestMemory)
 
     if (ioctl(fd, VIDIOC_DQBUF, &video->buf) < 0) {
         LOGE("%s: VIDIOC_DQBUF Failed", __func__);
-        return NULL;
+        return;
     }
     nDequeued++;
 
-    size_t bytesused = video->buf.bytesused;
-    char *tempBuf = new char[bytesused];
-
-    MemoryStream strm(tempBuf, bytesused);
-    saveYUYV2JPEG((unsigned char *)video->mem[video->buf.index],
-                   video->width, video->height, strm, 100);
-    strm.closeStream();
-
-    size_t fileSize = strm.getOffset();
-    camera_memory_t* picture = mRequestMemory(-1,fileSize,1,NULL);
-    memcpy(picture->data, tempBuf, fileSize);
-    delete[] tempBuf;
-
-    if (ioctl(fd, VIDIOC_QBUF, &video->buf) < 0) {
-        LOGE("%s: VIDIOC_QBUF Failed", __func__);
-        return NULL;
-    }
-    nQueued++;
-
-    return picture;
+    memcpy(pRawBuffer, video->mem[video->buf.index], (size_t) video->buf.bytesused);
 }
 
 int V4L2Camera::saveYUYV2JPEG(unsigned char *inputBuffer, int width,
@@ -324,6 +419,148 @@ int V4L2Camera::saveYUYV2JPEG(unsigned char *inputBuffer, int width,
     free (lineBuffer);
 
     return fileSize;
+}
+
+int V4L2Camera::getCamera_version()
+{
+    /*
+     * Dummy method: it should return the Camera firmware version.
+     * We assume a dummy value of 1.
+     */
+    return 1;
+}
+
+int V4L2Camera::setAutofocus() 
+{
+    LOGV(": %s\n", __func__);
+    return 0;
+}
+
+int V4L2Camera::getAutoFocusResult()
+{
+    LOGV(": %s\n", __func__);
+    return 1;
+}
+
+int V4L2Camera::cancelAutofocus()
+{
+    LOGV(": %s\n", __func__);
+    return 0;
+}
+
+int V4L2Camera::setZoom(int zoom_level)
+{
+    LOGV(": %s\n", __func__);
+    return 0;
+}
+
+int V4L2Camera::getWhiteBalance()
+{
+    return (mWhiteBalance);
+}
+
+int V4L2Camera::setWhiteBalance(int white_balance)
+{
+    return 0;
+}
+
+int V4L2Camera::setSceneMode(int scene_mode)
+{
+    LOGV("%s(scene_mode(%d))", __func__, scene_mode);
+
+    mSceneMode = scene_mode;
+    return 0;
+}
+int V4L2Camera::getSceneMode()
+{
+    return (mSceneMode);
+}
+
+int V4L2Camera::setFocusMode(int focus_mode)
+{
+    LOGV("%s(focus_mode(%d))", __func__, focus_mode);
+
+    mFocusMode = focus_mode;
+    return 0;
+}
+
+int V4L2Camera::setExifOrientationInfo(int orientationInfo)
+{
+     m_exif_orientation = orientationInfo;
+     return 0;
+}
+
+int V4L2Camera::setISO(int iso_value)
+{
+    mISO = iso_value;
+    return 0;
+}
+
+int V4L2Camera::getISO(void)
+{
+    return (mISO);
+}
+
+int V4L2Camera::setMetering(int metering_value)
+{
+    mMetering = metering_value;
+    return 0;
+}
+int V4L2Camera::getMetering(void)
+{
+    return (mMetering);
+}
+
+int V4L2Camera::setContrast(int contrast_value)
+{
+    LOGV("%s(contrast_value(%d))", __func__, contrast_value);
+    mContrast = contrast_value;
+    return 0;
+}
+int V4L2Camera::getContrast(void)
+{
+    return (mContrast);
+}
+
+int V4L2Camera::setSharpness(int sharpness_value)
+{
+    LOGV("%s(sharpness_value(%d))", __func__, sharpness_value);
+    mSharpness = sharpness_value;
+    return 0;
+}
+
+int V4L2Camera::getSharpness(void)
+{
+    return (mSharpness);
+}
+
+int V4L2Camera::setSaturation(int saturation_value)
+{
+    mSaturation = saturation_value;
+    return 0;
+}
+
+int V4L2Camera::getSaturation(void)
+{
+    return (mSaturation);
+}
+
+int V4L2Camera::setBrightness(int brightness)
+{
+    LOGV("%s(brightness(%d))", __func__, brightness);
+
+    mBrightness = brightness;       
+    return 0;
+}
+
+int V4L2Camera::getBrightness(void)
+{
+    return (mBrightness);
+}
+
+int V4L2Camera::getOrientation()
+{
+    return (m_exif_orientation);
 }
 
 

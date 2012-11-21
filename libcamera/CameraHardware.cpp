@@ -18,7 +18,7 @@
 ** Author: Niels Keeman <nielskeeman@gmail.com>
 **
 */
-
+#define LOG_NDEBUG 0
 #define LOG_TAG "CameraHardware"
 #include <utils/Log.h>
 
@@ -38,6 +38,8 @@
     GRALLOC_USAGE_HW_RENDER | \
     GRALLOC_USAGE_SW_READ_RARELY | \
     GRALLOC_USAGE_SW_WRITE_NEVER
+
+#define EXIF_FILE_SIZE 28800
 
 extern "C" {
     // void yuyv422_to_yuv420sp(unsigned char*,unsigned char*,int,int);
@@ -115,6 +117,11 @@ namespace android {
         p.set(CameraParameters::KEY_MAX_EXPOSURE_COMPENSATION, "3");
         p.set(CameraParameters::KEY_MIN_EXPOSURE_COMPENSATION, "-3");
         p.set(CameraParameters::KEY_EXPOSURE_COMPENSATION_STEP, "0.1");
+	/*p.set(CameraParameters::KEY_GPS_LATITUDE, "0");
+	p.set(CameraParameters::KEY_GPS_LONGITUDE, "0");
+	p.set(CameraParameters::KEY_GPS_ALTITUDE, "0");*/
+//	p.set(CameraParameters::KEY_GPS_TIMESTAMP, "0");
+	//p.set(CameraParameters::KEY_GPS_PROCESSING_METHOD, "GPS");
 
         if (setParameters(p) != NO_ERROR) {
             LOGE("Failed to set default parameters?!");
@@ -418,6 +425,12 @@ namespace android {
         int i;
         char devnode[12];
         camera_memory_t* picture = NULL;
+	camera_memory_t* thumbnail = NULL;
+	camera_memory_t* ExifHeap = NULL;
+	int filesize = 0, thumb_size = 0;
+        int JpegExifSize = 0;
+	int picture_quality = atoi(mParameters.get(CameraParameters::KEY_JPEG_QUALITY));
+	int thumb_quality = atoi(mParameters.get(CameraParameters::KEY_JPEG_THUMBNAIL_QUALITY));
 
         Mutex::Autolock lock(mLock);
         if (mMsgEnabled & CAMERA_MSG_SHUTTER)
@@ -455,9 +468,40 @@ namespace android {
 
         //TODO xxx : Optimize the memory capture call. Too many memcpy
         if (mMsgEnabled & CAMERA_MSG_COMPRESSED_IMAGE) {
+	    mThumbnailWidth = atof(mParameters.get(CameraParameters::KEY_JPEG_THUMBNAIL_WIDTH));
+	    mThumbnailHeight = atof(mParameters.get(CameraParameters::KEY_JPEG_THUMBNAIL_HEIGHT));
+
             LOGD ("mJpegPictureCallback");
-            picture = camera.GrabJpegFrame(mRequestMemory);
-            mDataFn(CAMERA_MSG_COMPRESSED_IMAGE,picture,0,NULL ,mUser);
+	    if (mThumbnailWidth > 0 && mThumbnailHeight > 0) {
+		LOGD("Thumbnail is enabled!");
+                picture = camera.GrabJpegFrame(mRequestMemory, filesize, picture_quality, mThumbnailWidth, 
+					       mThumbnailHeight, &thumbnail, thumb_size, thumb_quality);
+
+	        ExifHeap = mRequestMemory(-1, EXIF_FILE_SIZE + thumb_size, 1, 0);
+            	CreateExif((unsigned char *)thumbnail->data, thumb_size, (unsigned char *)ExifHeap->data, JpegExifSize);
+		thumbnail->release(thumbnail);
+	    } else {
+		LOGD("Thumbnail is disabled");
+		picture = camera.GrabJpegFrame(mRequestMemory, filesize, picture_quality);
+
+                ExifHeap = mRequestMemory(-1, EXIF_FILE_SIZE, 1, 0);
+                CreateExif(NULL, NULL, (unsigned char *)ExifHeap->data, JpegExifSize);
+	    } 
+
+	    camera_memory_t *mem = mRequestMemory(-1, filesize + JpegExifSize, 1, 0);
+	    uint8_t *ptr = (uint8_t *) mem->data;
+
+	    memcpy(ptr, picture->data, 2);
+	    ptr += 2;
+
+	    memcpy(ptr, ExifHeap->data, JpegExifSize);
+	    ptr += JpegExifSize;
+
+	    memcpy(ptr, (uint8_t *) picture->data + 2, filesize - 2);
+
+            mDataFn(CAMERA_MSG_COMPRESSED_IMAGE, mem, 0, NULL, mUser);
+	    mem->release(mem);
+	    ExifHeap->release(ExifHeap);
             picture->release(picture);
         }
 
@@ -491,6 +535,10 @@ namespace android {
 
     status_t CameraHardware::setParameters(const CameraParameters& params)
     {
+	const char *valstr = NULL;
+	int width, height;
+        int framerate;
+
         Mutex::Autolock lock(mLock);
 
         if (strcmp(params.getPictureFormat(), CameraParameters::PIXEL_FORMAT_JPEG) != 0) {
@@ -525,8 +573,30 @@ namespace android {
             return BAD_VALUE;
         }
 
-        int width, height;
-        int framerate;
+	if ((valstr = params.get(CameraParameters::KEY_GPS_PROCESSING_METHOD)) != NULL)
+        {
+            LOGD("Set GPS_PROCESSING_METHOD %s", params.get(CameraParameters::KEY_GPS_PROCESSING_METHOD));
+	    strcpy(mPreviousGPSProcessingMethod, params.get(CameraParameters::KEY_GPS_PROCESSING_METHOD));
+        }
+
+	if ((valstr = params.get(CameraParameters::KEY_GPS_TIMESTAMP)) != NULL)
+        {
+	    long gpsTimestamp = strtol(valstr, NULL, 10);
+	    struct tm *timeinfo = gmtime((time_t *) & (gpsTimestamp));
+
+            LOGD("Set GPS_TIMESTAMP %s", params.get(CameraParameters::KEY_GPS_TIMESTAMP));
+
+	    if (timeinfo != NULL) {
+		strftime(m_gps_date, 11, "%Y:%m:%d", timeinfo);
+		m_gpsHour = timeinfo->tm_hour;
+		m_gpsMin  = timeinfo->tm_min;
+		m_gpsSec  = timeinfo->tm_sec;
+		LOGD("Convert timestamp %s %d:%d:%d", m_gps_date, m_gpsHour, m_gpsMin, m_gpsSec);
+	    }
+	    
+        }
+
+
         params.getVideoSize(&width, &height);
         LOGD("VIDEO SIZE: width=%d h=%d", width, height);
         params.getPictureSize(&width, &height);
@@ -564,6 +634,315 @@ namespace android {
     void CameraHardware::release()
     {
         close(camera_device);
+    }
+
+    void CameraHardware::CreateExif(unsigned char* pInThumbnailData,int Inthumbsize,unsigned char* pOutExifBuf,int& OutExifSize)
+    {
+	int w =0, h = 0;
+	int orientationValue = camera.getOrientation();
+	ExifCreator* mExifCreator = new ExifCreator();
+	unsigned int ExifSize = 0;
+	ExifInfoStructure ExifInfo;
+	char ver_date[5] = {NULL,};
+	unsigned short tempISO = 0;
+        struct tm *t = NULL;
+        time_t nTime;
+	double arg0,arg3;
+        int arg1,arg2;
+		
+	memset(&ExifInfo, NULL, sizeof(ExifInfoStructure));
+
+	strcpy( (char *)&ExifInfo.maker, "STMicroelectronics");
+	strcpy( (char *)&ExifInfo.model, "SPEAr1340-Cam");
+
+	mParameters.getPictureSize(&w, &h);
+	ExifInfo.imageWidth = ExifInfo.pixelXDimension = w;
+	ExifInfo.imageHeight = ExifInfo.pixelYDimension = h;
+
+	mParameters.getPreviewSize(&w, &h);
+
+	time(&nTime);
+	t = localtime(&nTime);
+
+	if(t != NULL) {
+	    sprintf((char *)&ExifInfo.dateTimeOriginal, "%4d:%02d:%02d %02d:%02d:%02d", 
+			t->tm_year + 1900, t->tm_mon + 1, t->tm_mday, t->tm_hour, t->tm_min, t->tm_sec);
+	    sprintf((char *)&ExifInfo.dateTimeDigitized, "%4d:%02d:%02d %02d:%02d:%02d", 
+			t->tm_year + 1900, t->tm_mon + 1, t->tm_mday, t->tm_hour, t->tm_min, t->tm_sec);						
+	    sprintf((char *)&ExifInfo.dateTime, "%4d:%02d:%02d %02d:%02d:%02d", 
+			t->tm_year + 1900, t->tm_mon + 1, t->tm_mday, t->tm_hour, t->tm_min, t->tm_sec); 					
+	}
+
+  	int cam_ver = camera.getCamera_version();
+
+	ExifInfo.Camversion[0] = (cam_ver & 0xFF);
+	ExifInfo.Camversion[1] = ((cam_ver >> 8) & 0xFF);
+	ExifInfo.Camversion[2] = ((cam_ver >> 16) & 0xFF);
+	ExifInfo.Camversion[3] = ((cam_ver >> 24) & 0xFF);
+		
+	sprintf((char *)&ExifInfo.software, "fw %02d.%02d prm %02d.%02d", 
+			ExifInfo.Camversion[2],ExifInfo.Camversion[3],ExifInfo.Camversion[0],ExifInfo.Camversion[1]); 	
+	if(mThumbnailWidth > 0 && mThumbnailHeight > 0) {
+	    LOGD("has thumbnail! %d x %d", mThumbnailWidth, mThumbnailHeight);
+	    ExifInfo.hasThumbnail = true;
+	    ExifInfo.thumbStream = pInThumbnailData;
+	    ExifInfo.thumbSize = Inthumbsize;
+	    ExifInfo.thumbImageWidth = mThumbnailWidth;
+	    ExifInfo.thumbImageHeight = mThumbnailHeight;
+	} else {
+	    ExifInfo.hasThumbnail = false;
+	}
+
+	ExifInfo.exposureProgram 	    = 1;
+	ExifInfo.exposureMode 		    = 0;
+	ExifInfo.contrast                   = convertToExifLMH(camera.getContrast(), 2);
+	ExifInfo.fNumber.numerator          = 28;
+	ExifInfo.fNumber.denominator        = 10;
+	ExifInfo.aperture.numerator         = 28;
+	ExifInfo.aperture.denominator       = 10;
+	ExifInfo.maxAperture.numerator      = 26;
+	ExifInfo.maxAperture.denominator    = 10;
+	ExifInfo.focalLength.numerator      = 2800;
+	ExifInfo.focalLength.denominator    = 1000;
+		//]
+	ExifInfo.brightness.numerator       = 5;
+	ExifInfo.brightness.denominator     = 9;
+	ExifInfo.iso                        = 1;
+	ExifInfo.flash                 	    = 0;	// default value
+
+	switch(orientationValue)
+	{            		
+	    case 0:
+		ExifInfo.orientation                = 1 ;
+		break;
+	    case 90:
+		ExifInfo.orientation                = 6 ;
+		break;
+	    case 180:
+		ExifInfo.orientation                = 3 ;
+		break;
+	    case 270:
+		ExifInfo.orientation                = 8 ;
+		break;
+	    default:
+		ExifInfo.orientation                = 1 ;
+		break;
+	}
+
+	ExifInfo.meteringMode = camera.getMetering();
+	ExifInfo.whiteBalance = 0;
+	ExifInfo.saturation = convertToExifLMH(camera.getSaturation(), 2);
+	ExifInfo.sharpness = convertToExifLMH(camera.getSharpness(), 2);
+	switch(camera.getISO()) {
+	    case 2:
+		ExifInfo.isoSpeedRating             = 50;
+	        break;
+	    case 3:
+		ExifInfo.isoSpeedRating             = 100;
+		break;
+	    case 4:
+		ExifInfo.isoSpeedRating             = 200;
+		break;
+	    case 5:
+		ExifInfo.isoSpeedRating             = 400;
+		break;
+	    case 6:
+		ExifInfo.isoSpeedRating             = 800;
+		break;
+	    default:
+		ExifInfo.isoSpeedRating             = 100;
+	        break;
+	}               
+
+	switch(camera.getBrightness()) {
+	    case 0:
+		ExifInfo.exposureBias.numerator = -20;
+		break;
+	    case 1:
+		ExifInfo.exposureBias.numerator = -15;
+		break;
+	    case 2:
+	        ExifInfo.exposureBias.numerator = -10;
+		break;
+	    case 3:
+		ExifInfo.exposureBias.numerator =  -5;
+		break;
+	    case 4:
+		ExifInfo.exposureBias.numerator =   0;
+		break;
+	    case 5:
+		ExifInfo.exposureBias.numerator =   5;
+		break;
+	    case 6:
+		ExifInfo.exposureBias.numerator =  10;
+		break;
+	    case 7:
+		ExifInfo.exposureBias.numerator =  15;
+		break;
+	    case 8:
+		ExifInfo.exposureBias.numerator =  20;
+		break;
+	    default:
+		ExifInfo.exposureBias.numerator = 0;
+		break;
+	}
+	ExifInfo.exposureBias.denominator       = 10;
+	ExifInfo.sceneCaptureType               = 0;
+	ExifInfo.meteringMode               = 2;
+	ExifInfo.whiteBalance               = 1;
+	ExifInfo.saturation                 = 0;
+	ExifInfo.sharpness                  = 0;
+	ExifInfo.isoSpeedRating             = 100;
+	ExifInfo.exposureBias.numerator     = 0;
+	ExifInfo.exposureBias.denominator   = 10;
+	ExifInfo.sceneCaptureType           = 4;
+
+	if (mParameters.get(mParameters.KEY_GPS_LATITUDE) != 0 && mParameters.get(mParameters.KEY_GPS_LONGITUDE) != 0)
+	{		
+	    arg0 = getGPSLatitude();
+
+	    if (arg0 > 0)
+	        ExifInfo.GPSLatitudeRef[0] = 'N'; 
+	    else
+	        ExifInfo.GPSLatitudeRef[0] = 'S';
+
+	    convertFromDecimalToGPSFormat(fabs(arg0),arg1,arg2,arg3);
+
+	    ExifInfo.GPSLatitude[0].numerator = arg1;
+	    ExifInfo.GPSLatitude[0].denominator = 1;
+  	    ExifInfo.GPSLatitude[1].numerator = arg2; 
+	    ExifInfo.GPSLatitude[1].denominator = 1;
+	    ExifInfo.GPSLatitude[2].numerator = arg3; 
+	    ExifInfo.GPSLatitude[2].denominator = 60;
+
+	    arg0 = getGPSLongitude();
+
+	    if (arg0 > 0)
+		ExifInfo.GPSLongitudeRef[0] = 'E';
+	    else
+		ExifInfo.GPSLongitudeRef[0] = 'W';
+
+	    convertFromDecimalToGPSFormat(fabs(arg0),arg1,arg2,arg3);
+
+	    ExifInfo.GPSLongitude[0].numerator = arg1; 
+	    ExifInfo.GPSLongitude[0].denominator = 1;
+	    ExifInfo.GPSLongitude[1].numerator = arg2; 
+	    ExifInfo.GPSLongitude[1].denominator = 1;
+	    ExifInfo.GPSLongitude[2].numerator = arg3; 
+	    ExifInfo.GPSLongitude[2].denominator = 60;
+
+	    arg0 = getGPSAltitude();
+
+	    if (arg0 > 0)	
+		ExifInfo.GPSAltitudeRef = 0;
+	    else
+		ExifInfo.GPSAltitudeRef = 1;
+
+	    ExifInfo.GPSAltitude[0].numerator = fabs(arg0) ; 
+	    ExifInfo.GPSAltitude[0].denominator = 1;
+
+	    //GPS_Time_Stamp
+	    ExifInfo.GPSTimestamp[0].numerator = (uint32_t)m_gpsHour;
+	    ExifInfo.GPSTimestamp[0].denominator = 1; 
+	    ExifInfo.GPSTimestamp[1].numerator = (uint32_t)m_gpsMin;
+	    ExifInfo.GPSTimestamp[1].denominator = 1;               
+	    ExifInfo.GPSTimestamp[2].numerator = (uint32_t)m_gpsSec;
+	    ExifInfo.GPSTimestamp[2].denominator = 1;
+
+	    //GPS_ProcessingMethod
+	    strcpy((char *)ExifInfo.GPSProcessingMethod, mPreviousGPSProcessingMethod);
+
+	    //GPS_Date_Stamp
+	    strcpy((char *)ExifInfo.GPSDatestamp, m_gps_date);
+
+	    ExifInfo.hasGPS = true;	
+	    LOGD(" With GPS!\n");	
+	} else {
+	    ExifInfo.hasGPS = false;
+	    LOGD(" No GPS! latitude=%s\n", mParameters.get(mParameters.KEY_GPS_LATITUDE));
+	}		
+	
+	ExifSize = mExifCreator->ExifCreate( (unsigned char *)pOutExifBuf, &ExifInfo);
+	OutExifSize = ExifSize;
+	delete mExifCreator; 
+    }
+
+
+    void CameraHardware::convertFromDecimalToGPSFormat(double coord, int& deg, int& min, double& sec)
+    {
+	double tmp = 0;
+
+	deg  = (int)floor(coord);
+	tmp = (coord - floor(coord)) * 60;
+	min = (int)floor(tmp);
+	tmp = (tmp - floor(tmp)) * 3600;
+	sec  = (int)floor(tmp);
+	if ( sec >= 3600) {
+	    sec = 0;
+	    min += 1;
+	}
+	if (min >= 60) {
+	    min = 0;
+	    deg += 1;
+	}
+	LOGD("convertFromDecimalToGPSFormat: coord = %f\tdeg = %d\tmin = %d\tsec = %f", coord, deg, min, sec);
+    }
+
+    int CameraHardware::convertToExifLMH(int value, int key)
+    {
+	const int NORMAL = 0;
+	const int LOW    = 1;
+	const int HIGH   = 2;
+
+	value -= key;
+	if(value == 0) return NORMAL;
+	if(value < 0) return LOW;
+	else return HIGH;
+    }
+
+    double CameraHardware::getGPSLatitude() const
+    {
+	double gpsLatitudeValue = 0;
+	if( mParameters.get(mParameters.KEY_GPS_LATITUDE)) {
+ 	    gpsLatitudeValue = atof(mParameters.get(mParameters.KEY_GPS_LATITUDE));
+	    if(gpsLatitudeValue != 0) {
+		LOGD("getGPSLatitude = %2.6f \n", gpsLatitudeValue);
+	    }
+	    return gpsLatitudeValue;
+	} else {
+	    LOGD("getGPSLatitude null \n");
+	    return 0;
+	}
+    }
+
+    double CameraHardware::getGPSLongitude() const
+    {
+	double gpsLongitudeValue = 0;
+	if( mParameters.get(mParameters.KEY_GPS_LONGITUDE)) {
+	    gpsLongitudeValue = atof(mParameters.get(mParameters.KEY_GPS_LONGITUDE));
+	    if(gpsLongitudeValue != 0) {
+		LOGD("getGPSLongitude = %2.6f \n", gpsLongitudeValue);
+	    }
+	    return gpsLongitudeValue;
+	} else {
+	    LOGD("getGPSLongitude null \n");
+	    return 0;
+	}
+    }
+
+    double CameraHardware::getGPSAltitude() const
+    {
+	double gpsAltitudeValue = 0;
+	if( mParameters.get(mParameters.KEY_GPS_ALTITUDE)) {
+	    gpsAltitudeValue = atof(mParameters.get(mParameters.KEY_GPS_ALTITUDE));
+	    if(gpsAltitudeValue != 0) {
+		LOGD("getGPSAltitude = %2.2f \n", gpsAltitudeValue);
+	    }
+	    return gpsAltitudeValue;
+	} else {
+	    LOGD("getGPSAltitude null \n");
+	    return 0;
+	}
     }
 
 }; // namespace android

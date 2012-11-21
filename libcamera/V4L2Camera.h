@@ -57,11 +57,53 @@ public:
     int width();
     int height();
 
+    int setAutofocus();
+    int getAutoFocusResult();
+    int cancelAutofocus();
+    int setZoom(int zoom_level);
+    int setWhiteBalance(int white_balance);
+    int setFramerate(int framerate,int cam_mode);
+    int setBrightness(int brightness);
+    int getBrightness(void);
+    int setSceneMode(int scene_mode);
+    int getSceneMode();
+    int setFocusMode(int focus_mode);
+    int SetCameraFlip(bool isCapture);
+    int GetJpegImageSize();
+    int GetThumbNailOffset();
+    int GetYUVOffset();
+    int GetThumbNailDataSize();
+    int setExifOrientationInfo(int orientationInfo);
+    int getOrientation();
+    void stopPreview();
+    int GetJPEG_Capture_Width();
+    int GetJPEG_Capture_Height();
+    int getCamera_version();
+    int getWhiteBalance();
+    int setMetering(int metering_value);
+    int setISO(int iso_value);
+    int getISO(void);
+    int getMetering(void);
+    int setContrast(int contrast_value);
+    int getContrast(void);
+    int getSharpness(void);
+    int setSharpness(int sharpness_value);
+    int setSaturation(int saturation_value);
+    int getSaturation(void);
+    
     void *GrabPreviewFrame();
+    void *GrabPreviewFrame(size_t &bytesused);
     void ReleasePreviewFrame();
     sp<IMemory> GrabRawFrame();
-    camera_memory_t *GrabJpegFrame(camera_request_memory mRequestMemory);
-
+    camera_memory_t *GrabJpegFrame(camera_request_memory mRequestMemory, 
+				   int& filesize, int picture_quality);
+    camera_memory_t *GrabJpegFrame(camera_request_memory mRequestMemory, int& mfilesize,
+                                   int picture_quality, int thumbWidth, int thumbHeight, 
+				   camera_memory_t **thumb, int &thumb_size, 
+				   int thumb_quality);
+    int getCameraFWVer();
+    int saveYUYV2JPEG(unsigned char *inputBuffer, int width,
+                      int height, FILE *file, int quality);
 private:
     struct Video *video;
 
@@ -69,8 +111,19 @@ private:
     int nQueued;
     int nDequeued;
 
-    int saveYUYV2JPEG(unsigned char *inputBuffer, int width,
-                      int height, FILE *file, int quality);
+    int mZoomLevel;
+    int mWhiteBalance;
+    int mFocusMode;
+    int mSceneMode;
+    int m_exif_orientation;
+    int mISO;
+    int mMetering;
+    int mContrast;
+    int mSharpness;
+    int mSaturation;
+    int mBrightness;
+
+    void GrabRawFrame(void* pRawBuffer);
     void yuv_to_rgb16(unsigned char y, unsigned char u,
                       unsigned char v, unsigned char *rgb);
     void convert(unsigned char *buf, unsigned char *rgb,

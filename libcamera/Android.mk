@@ -5,6 +5,7 @@ include $(CLEAR_VARS)
 LOCAL_SRC_FILES:= \
 	CameraHal_Module.cpp \
         V4L2Camera.cpp \
+	ExifCreator.cpp \
         CameraHardware.cpp \
         converter.cpp
 
@@ -23,8 +24,8 @@ LOCAL_SHARED_LIBRARIES:= \
     libutils \
     libcutils \
     libcamera_client \
-    libcameraservice \
     libgui \
+    libdl \
     libjpeg \
     libexif
 
