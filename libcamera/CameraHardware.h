@@ -51,11 +51,13 @@
 #include <binder/MemoryHeapBase.h>
 #include <utils/threads.h>
 #include "V4L2Camera.h"
-
+#include <math.h>
 #include <hardware/camera.h>
 
 #include <sys/ioctl.h>
 #include "V4L2Camera.h"
+#include "Exif.h"
+#include "ExifCreator.h"
 
 namespace android {
 
@@ -134,6 +136,13 @@ private:
     static int beginAutoFocusThread(void *cookie);
     int autoFocusThread();
 
+    void CreateExif(unsigned char* pInThumbnailData, int InThumbSize, unsigned char* pOutExifBuf, int& OutExifSize);
+    void convertFromDecimalToGPSFormat(double arg1,int& arg2,int& arg3,double& arg4);
+    int convertToExifLMH(int value, int key);
+    double getGPSLatitude() const;
+    double getGPSLongitude() const;
+    double getGPSAltitude() const;
+
     int pictureThread();
     camera_request_memory   mRequestMemory;
     mutable Mutex           mLock;
@@ -164,7 +173,14 @@ private:
     camera_data_timestamp_callback mTimestampFn;
     void*                   mUser;
     int32_t                 mMsgEnabled;
+    int m_gpsHour;
+    int m_gpsMin;
+    int m_gpsSec;
+    char mPreviousGPSProcessingMethod[150];
+    char m_gps_date[11];
 
+    int mThumbnailWidth;
+    int mThumbnailHeight;
 };
 
 }; // namespace android
