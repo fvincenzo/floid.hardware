@@ -21,6 +21,7 @@
 
 #include <linux/kernel.h>
 #include <linux/module.h>
+#include <linux/wait.h>
 /* needed for __init,__exit directives */
 #include <linux/init.h>
 /* needed for remap_pfn_range
@@ -104,8 +105,12 @@ typedef struct
     unsigned int iosize;
     volatile u8 *hwregs;
     int irq;
-    struct fasync_struct *async_queue_dec;
-    struct fasync_struct *async_queue_pp;
+    atomic_t dec_seqno;
+    wait_queue_head_t wait_queue_dec;
+
+    atomic_t pp_seqno;
+    wait_queue_head_t wait_queue_pp;
+
 } hx170dec_t;
 
 static hx170dec_t hx170dec_data;    /* dynamic allocation? */
@@ -124,11 +129,7 @@ static void dump_regs(unsigned long data);
 #endif
 
 /* IRQ handler */
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,18))
-static irqreturn_t hx170dec_isr(int irq, void *dev_id, struct pt_regs *regs);
-#else
 static irqreturn_t hx170dec_isr(int irq, void *dev_id);
-#endif
 
 /*------------------------------------------------------------------------------
     Function name   : hx170dec_ioctl
@@ -136,14 +137,7 @@ static irqreturn_t hx170dec_isr(int irq, void *dev_id);
 
     Return type     : int
 ------------------------------------------------------------------------------*/
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,36))
-static int hx170dec_ioctl(struct inode *inode, struct file *filp,
-                          unsigned int cmd, unsigned long arg)
-#else
-/* From Linux 2.6.36 the locked ioctl was removed in favor of unlocked one */
 static long hx170dec_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)  
-#endif
-
 {
     int err = 0;
 
@@ -192,6 +186,20 @@ static long hx170dec_ioctl(struct file *filp, unsigned int cmd, unsigned long ar
     case HX170DEC_PP_INSTANCE:
         filp->private_data = &hx_pp_instance;
         break;
+    case HX170DEC_IO_WAITFORDEC:
+        if(atomic_xchg(&hx170dec_data.dec_seqno, 0))
+            return 0;
+        err = wait_event_interruptible(hx170dec_data.wait_queue_dec, atomic_read(&hx170dec_data.dec_seqno));
+        if(err == 0)
+            atomic_dec(&hx170dec_data.dec_seqno);
+        return err;
+    case HX170DEC_IO_WAITFORPP:
+        if(atomic_xchg(&hx170dec_data.pp_seqno, 0))
+            return 0;
+        err = wait_event_interruptible(hx170dec_data.wait_queue_pp, atomic_read(&hx170dec_data.pp_seqno));
+        if(err == 0)
+            atomic_dec(&hx170dec_data.pp_seqno);
+        return err;
 
 #ifdef HW_PERFORMANCE
     case HX170DEC_HW_PERFORMANCE:
@@ -220,40 +228,6 @@ static int hx170dec_open(struct inode *inode, struct file *filp)
 }
 
 /*------------------------------------------------------------------------------
-    Function name   : hx170dec_fasync
-    Description     : Method for signing up for a interrupt
-
-    Return type     : int
-------------------------------------------------------------------------------*/
-
-static int hx170dec_fasync(int fd, struct file *filp, int mode)
-{
-
-    hx170dec_t *dev = &hx170dec_data;
-    struct fasync_struct **async_queue;
-
-    /* select which interrupt this instance will sign up for */
-
-    if(((u32 *) filp->private_data) == &hx_dec_instance)
-    {
-        /* decoder */
-        PDEBUG("decoder fasync called %d %x %d %x\n",
-               fd, (u32) filp, mode, (u32) & dev->async_queue_dec);
-
-        async_queue = &dev->async_queue_dec;
-    }
-    else
-    {
-        /* pp */
-        PDEBUG("pp fasync called %d %x %d %x\n",
-               fd, (u32) filp, mode, (u32) & dev->async_queue_pp);
-        async_queue = &dev->async_queue_pp;
-    }
-
-    return fasync_helper(fd, filp, mode, async_queue);
-}
-
-/*------------------------------------------------------------------------------
     Function name   : hx170dec_release
     Description     : Release driver
 
@@ -262,15 +236,6 @@ static int hx170dec_fasync(int fd, struct file *filp, int mode)
 
 static int hx170dec_release(struct inode *inode, struct file *filp)
 {
-
-    /* hx170dec_t *dev = &hx170dec_data; */
-
-    if(filp->f_flags & FASYNC)
-    {
-        /* remove this filp from the asynchronusly notified filp's */
-        hx170dec_fasync(-1, filp, 0);
-    }
-
     PDEBUG("dev closed\n");
     return 0;
 }
@@ -279,13 +244,7 @@ static int hx170dec_release(struct inode *inode, struct file *filp)
 static struct file_operations hx170dec_fops = {
   open:hx170dec_open,
   release:hx170dec_release,
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,36))
-  ioctl:hx170dec_ioctl,
-#else
-  /* From Linux 2.6.36 the locked ioctl was removed */
   unlocked_ioctl:hx170dec_ioctl,
-#endif
-  fasync:hx170dec_fasync,
 };
 
 /*------------------------------------------------------------------------------
@@ -309,8 +268,11 @@ int __init hx170dec_init(void)
     hx170dec_data.iosize = DEC_IO_SIZE;
     hx170dec_data.irq = irq;
 
-    hx170dec_data.async_queue_dec = NULL;
-    hx170dec_data.async_queue_pp = NULL;
+    atomic_set(&hx170dec_data.dec_seqno, 0);
+    init_waitqueue_head(&hx170dec_data.wait_queue_dec);
+
+    atomic_set(&hx170dec_data.pp_seqno, 0);
+    init_waitqueue_head(&hx170dec_data.wait_queue_pp);
 
     result = register_chrdev(hx170dec_major, "hx170dec", &hx170dec_fops);
     if(result < 0)
@@ -334,11 +296,7 @@ int __init hx170dec_init(void)
     if(irq > 0)
     {
         result = request_irq(irq, hx170dec_isr,
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,18))
-                             SA_INTERRUPT | SA_SHIRQ,
-#else
                              IRQF_DISABLED | IRQF_SHARED,
-#endif
                              "hx170dec", (void *) &hx170dec_data);
         if(result != 0)
         {
@@ -441,8 +399,11 @@ int __init hx170dec_init_SPEAr1340(void)
     hx170dec_data.iosize = DEC_IO_SIZE;
     hx170dec_data.irq = irq;
 
-    hx170dec_data.async_queue_dec = NULL;
-    hx170dec_data.async_queue_pp = NULL;
+    atomic_set(&hx170dec_data.dec_seqno, 0);
+    init_waitqueue_head(&hx170dec_data.wait_queue_dec);
+
+    atomic_set(&hx170dec_data.pp_seqno, 0);
+    init_waitqueue_head(&hx170dec_data.wait_queue_pp);
 
     result = register_chrdev(hx170dec_major, "hx170dec", &hx170dec_fops);
     if(result < 0)
@@ -466,11 +427,7 @@ int __init hx170dec_init_SPEAr1340(void)
     if(irq > 0)
     {
         result = request_irq(irq, hx170dec_isr,
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,18))
-                             SA_INTERRUPT | SA_SHIRQ,
-#else
                              IRQF_DISABLED | IRQF_SHARED,
-#endif
                              "hx170dec", (void *) &hx170dec_data);
         if(result != 0)
         {
@@ -622,11 +579,7 @@ static void ReleaseIO(void)
 
     Return type     : irqreturn_t
 ------------------------------------------------------------------------------*/
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,18))
-irqreturn_t hx170dec_isr(int irq, void *dev_id, struct pt_regs *regs)
-#else
 irqreturn_t hx170dec_isr(int irq, void *dev_id)
-#endif
 {
     unsigned int handled = 0;
 
@@ -652,17 +605,10 @@ irqreturn_t hx170dec_isr(int irq, void *dev_id)
             /* clear dec IRQ */
             writel(irq_status_dec & (~HX_DEC_INTERRUPT_BIT),
                    dev->hwregs + X170_INTERRUPT_REGISTER_DEC);
-            /* fasync kill for decoder instances */
-            if(dev->async_queue_dec != NULL)
-            {
-                kill_fasync(&dev->async_queue_dec, SIGIO, POLL_IN);
-            }
-            else
-            {
-                printk(KERN_WARNING
-                       "hx170dec: DEC IRQ received w/o anybody waiting for it!\n");
-            }
-            PDEBUG("decoder IRQ received!\n");
+            
+            atomic_inc(&dev->dec_seqno);
+            wake_up_interruptible(&dev->wait_queue_dec);
+	    PDEBUG("decoder IRQ received!\n");
         }
 
         if(irq_status_pp & HX_PP_INTERRUPT_BIT)
@@ -674,16 +620,8 @@ irqreturn_t hx170dec_isr(int irq, void *dev_id)
             writel(irq_status_pp & (~HX_PP_INTERRUPT_BIT),
                    dev->hwregs + X170_INTERRUPT_REGISTER_PP);
 
-            /* kill fasync for PP instances */
-            if(dev->async_queue_pp != NULL)
-            {
-                kill_fasync(&dev->async_queue_pp, SIGIO, POLL_IN);
-            }
-            else
-            {
-                printk(KERN_WARNING
-                       "hx170dec: PP IRQ received w/o anybody waiting for it!\n");
-            }
+            atomic_inc(&dev->pp_seqno);
+            wake_up_interruptible(&dev->wait_queue_pp);
             PDEBUG("pp IRQ received!\n");
         }
 
