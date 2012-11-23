@@ -41,11 +41,6 @@
 
 #define EXIF_FILE_SIZE 28800
 
-extern "C" {
-    // void yuyv422_to_yuv420sp(unsigned char*,unsigned char*,int,int);
-    void convertYUYVtoRGB565(unsigned char *buf, unsigned char *rgb, int width, int height);
-}
-
 namespace android {
 
     CameraHardware::CameraHardware(int cameraId)
@@ -54,9 +49,6 @@ namespace android {
         mPreviewHeap(0),
         mPreviewRunning(false),
         mRecordRunning(false),
-        mCurrentPreviewFrame(0),
-        nQueued(0),
-        nDequeued(0),
         mNotifyFn(NULL),
         mDataFn(NULL),
         mTimestampFn(NULL),
@@ -140,7 +132,7 @@ namespace android {
         camera_request_memory get_memory,
         void *arg)
     {
-        Mutex::Autolock lock(mLock);
+        //Mutex::Autolock lock(mLock);
         mNotifyFn = notify_cb;
         mDataFn = data_cb;
         mRequestMemory = get_memory;
@@ -150,18 +142,27 @@ namespace android {
 
     int CameraHardware::setPreviewWindow( preview_stream_ops_t *window)
     {
-        int err;
-        Mutex::Autolock lock(mLock);
-        if(mNativeWindow)
-            mNativeWindow=NULL;
-        if(window==NULL)
-        {
-            LOGW("Window is Null");
-            return 0;
+        int err = 0;
+        bool previewRunning;
+
+        // XXX Should probably hold the lock until the preview has stopped.
+        mLock.lock();
+        previewRunning = mPreviewRunning;
+        mLock.unlock();
+        if (previewRunning) {
+            LOGI("stop preview (window change)");
+            stopPreview();
         }
+
+        mNativeWindow=window;
+        if(!window)
+	{
+            LOGW("Window is Null");
+            return err;
+        }
+
         int width, height;
         mParameters.getPreviewSize(&width, &height);
-        mNativeWindow=window;
         mNativeWindow->set_usage(mNativeWindow,CAMHAL_GRALLOC_USAGE);
         mNativeWindow->set_buffers_geometry(
             mNativeWindow,
@@ -177,8 +178,12 @@ namespace android {
                 mNativeWindow = NULL;
             }
         }
+        if (previewRunning) {
+            LOGI("start/resume preview");
+            startPreview(width, height);
+        }
 
-        return 0;
+        return err;
     }
 
     void CameraHardware::enableMsgType(int32_t msgType)
@@ -209,13 +214,11 @@ namespace android {
         int height = camera.height();
 
         if (mPreviewRunning) {
-            mLock.lock();
             if (mNativeWindow != NULL)
             {
                 buffer_handle_t *buf_handle;
                 if ((err = mNativeWindow->dequeue_buffer(mNativeWindow,&buf_handle,&stride)) != 0) {
                     LOGW("Surface::dequeueBuffer returned error %d", err);
-                    mLock.unlock();
                     return err;
                 }
                 mNativeWindow->lock_buffer(mNativeWindow, buf_handle);
@@ -224,7 +227,7 @@ namespace android {
                 Rect bounds(width, height);
                 void *tempbuf;
                 void *dst;
-                if(0 == mapper.lock(*buf_handle,CAMHAL_GRALLOC_USAGE, bounds, &dst))
+                if(0 == mapper.lock(*buf_handle, CAMHAL_GRALLOC_USAGE, bounds, &dst))
                 {
                     // Get preview frame
                     tempbuf=camera.GrabPreviewFrame();
@@ -249,9 +252,7 @@ namespace android {
                     camera.ReleasePreviewFrame();
                 }
             }
-            mLock.unlock();
         }
-
         return NO_ERROR;
     }
 
@@ -315,31 +316,21 @@ namespace android {
 
     void CameraHardware::stopPreview()
     {
-        sp<PreviewThread> previewThread;
-
         { // scope for the lock
             Mutex::Autolock lock(mLock);
             mPreviewRunning = false;
-            previewThread = mPreviewThread;
         }
-
-        if (previewThread != 0) {
-            previewThread->requestExitAndWait();
-        }
-
         if (mPreviewThread != 0) {
+            mPreviewThread->requestExitAndWait();
+            mPreviewThread.clear();
             camera.Uninit();
             camera.StopStreaming();
             camera.Close();
         }
-
         if (mPreviewHeap) {
             mPreviewHeap->release(mPreviewHeap);
             mPreviewHeap = 0;
         }
-
-        Mutex::Autolock lock(mLock);
-        mPreviewThread.clear();
     }
 
     bool CameraHardware::previewEnabled()
@@ -355,10 +346,10 @@ namespace android {
         int width, height;
         mParameters.getVideoSize(&width, &height);
         startPreview(width, height);
-
-        Mutex::Autolock lock(mLock);
-        mRecordRunning = true;
-
+        {
+            Mutex::Autolock lock(mLock);
+            mRecordRunning = true;
+        }
         return NO_ERROR;
     }
 
@@ -608,11 +599,17 @@ namespace android {
         mParameters = params;
 
         if(mNativeWindow){
-            mNativeWindow->set_buffers_geometry(
-            mNativeWindow,
-            width,
-            height,
-            HAL_PIXEL_FORMAT_YV12);
+	    if (!mPreviewRunning){
+                LOGD("CameraHardware::setParameters preview stopped");
+                mNativeWindow->set_buffers_geometry(
+                mNativeWindow,
+                width,
+                height,
+                HAL_PIXEL_FORMAT_YV12);
+            }
+            else{
+                mParameters.setPreviewSize(camera.width(), camera.height());
+            }
         }
         return NO_ERROR;
     }
