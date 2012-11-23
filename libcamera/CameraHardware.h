@@ -22,39 +22,10 @@
 #define ANDROID_HARDWARE_CAMERA_HARDWARE_H
 
 #include <utils/threads.h>
-#include <binder/MemoryBase.h>
-#include <binder/MemoryHeapBase.h>
-#include <utils/threads.h>
-
-#include <utils/threads.h>
-#include <stdio.h>
-#include <stdarg.h>
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
-#include <time.h>
-#include <fcntl.h>
-#include <sys/ioctl.h>
-#include <sys/mman.h>
-#include <sys/stat.h>
-#include <utils/Log.h>
-#include <utils/threads.h>
 #include <linux/videodev2.h>
-#include "binder/MemoryBase.h"
-#include "binder/MemoryHeapBase.h"
-#include <utils/threads.h>
 #include <camera/CameraParameters.h>
 #include <hardware/camera.h>
-#include <sys/ioctl.h>
-#include <utils/threads.h>
-#include <binder/MemoryBase.h>
-#include <binder/MemoryHeapBase.h>
-#include <utils/threads.h>
-#include "V4L2Camera.h"
 #include <math.h>
-#include <hardware/camera.h>
-
-#include <sys/ioctl.h>
 #include "V4L2Camera.h"
 #include "Exif.h"
 #include "ExifCreator.h"
@@ -159,14 +130,8 @@ private:
     // protected by mLock
     sp<PreviewThread>       mPreviewThread;
 
-    // only used from PreviewThread
-    int                     mCurrentPreviewFrame;
-
     void*                   framebuffer;
     int                     camera_device;
-    void*                   mem[4];
-    int                     nQueued;
-    int                     nDequeued;
     V4L2Camera              camera;
     camera_notify_callback         mNotifyFn;
     camera_data_callback           mDataFn;
