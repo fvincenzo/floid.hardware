@@ -84,20 +84,20 @@ namespace android {
 
         p.set(CameraParameters::KEY_SUPPORTED_FOCUS_MODES, CameraParameters::FOCUS_MODE_FIXED);
         p.set(CameraParameters::KEY_FOCUS_MODE,CameraParameters::FOCUS_MODE_FIXED);
-	//p.set(CameraParameters::KEY_FOCUS_DISTANCES,"0.60,1.20,Infinity");
+	p.set(CameraParameters::KEY_FOCUS_DISTANCES,"0.60,1.20,Infinity");
 
         p.setPictureFormat(CameraParameters::PIXEL_FORMAT_JPEG);
         p.set(CameraParameters::KEY_SUPPORTED_PICTURE_SIZES, "640x480,352x288,176x144");
         p.setPictureSize(MIN_WIDTH, MIN_HEIGHT);
         p.set(CameraParameters::KEY_JPEG_QUALITY, "90");
         p.set(CameraParameters::KEY_SUPPORTED_PICTURE_FORMATS,CameraParameters::PIXEL_FORMAT_JPEG);
-        p.set(CameraParameters::KEY_SUPPORTED_JPEG_THUMBNAIL_SIZES, "320x240,0x0");
-        p.set(CameraParameters::KEY_JPEG_THUMBNAIL_WIDTH, "320");
-        p.set(CameraParameters::KEY_JPEG_THUMBNAIL_HEIGHT, "240");
+        p.set(CameraParameters::KEY_SUPPORTED_JPEG_THUMBNAIL_SIZES, "160x120,0x0");
+        p.set(CameraParameters::KEY_JPEG_THUMBNAIL_WIDTH, "160");
+        p.set(CameraParameters::KEY_JPEG_THUMBNAIL_HEIGHT, "120");
         p.set(CameraParameters::KEY_JPEG_THUMBNAIL_QUALITY, "100");
 
-	//p.set(CameraParameters::KEY_HORIZONTAL_VIEW_ANGLE, "52.6");
-        //p.set(CameraParameters::KEY_VERTICAL_VIEW_ANGLE, "36.9");
+	p.set(CameraParameters::KEY_HORIZONTAL_VIEW_ANGLE, "52.6");
+        p.set(CameraParameters::KEY_VERTICAL_VIEW_ANGLE, "36.9");
 
         p.set(CameraParameters::KEY_FOCAL_LENGTH, "2.8"); // typical
 
@@ -105,11 +105,6 @@ namespace android {
         p.set(CameraParameters::KEY_MAX_EXPOSURE_COMPENSATION, "3");
         p.set(CameraParameters::KEY_MIN_EXPOSURE_COMPENSATION, "-3");
         p.set(CameraParameters::KEY_EXPOSURE_COMPENSATION_STEP, "0.1");
-	/*p.set(CameraParameters::KEY_GPS_LATITUDE, "0");
-	p.set(CameraParameters::KEY_GPS_LONGITUDE, "0");
-	p.set(CameraParameters::KEY_GPS_ALTITUDE, "0");*/
-//	p.set(CameraParameters::KEY_GPS_TIMESTAMP, "0");
-	//p.set(CameraParameters::KEY_GPS_PROCESSING_METHOD, "GPS");
 
         if (setParameters(p) != NO_ERROR) {
             LOGE("Failed to set default parameters?!");
