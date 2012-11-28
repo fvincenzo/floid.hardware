@@ -30,8 +30,8 @@
 #include <gui/ISurfaceTexture.h>
 #include "converter.h"
 
-#define MIN_WIDTH           640
-#define MIN_HEIGHT          480
+#define MIN_WIDTH           320
+#define MIN_HEIGHT          240
 #define CAM_SIZE            "640x480"
 #define PIXEL_FORMAT        V4L2_PIX_FMT_YUYV
 #define CAMHAL_GRALLOC_USAGE GRALLOC_USAGE_HW_TEXTURE | \
@@ -74,8 +74,8 @@ namespace android {
         p.setPreviewFormat(CameraParameters::PIXEL_FORMAT_YUV420SP);
         p.set(CameraParameters::KEY_SUPPORTED_PREVIEW_SIZES, "640x480,352x288,176x144");
         p.setPreviewSize(MIN_WIDTH, MIN_HEIGHT);
-        p.set(CameraParameters::KEY_SUPPORTED_PREVIEW_FPS_RANGE, "15,30");
-        p.set(CameraParameters::KEY_PREVIEW_FPS_RANGE, "15,30");
+        p.set(CameraParameters::KEY_SUPPORTED_PREVIEW_FPS_RANGE, "(15000,30000)");
+        p.set(CameraParameters::KEY_PREVIEW_FPS_RANGE, "15000,30000");
 
         p.set(CameraParameters::KEY_VIDEO_FRAME_FORMAT, CameraParameters::PIXEL_FORMAT_YUV420P);
         p.set(CameraParameters::KEY_SUPPORTED_VIDEO_SIZES, "640x480,352x288,176x144");
