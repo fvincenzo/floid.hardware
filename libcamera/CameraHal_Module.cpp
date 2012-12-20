@@ -63,19 +63,20 @@ open: camera_device_open
 };
 
 camera_module_t HAL_MODULE_INFO_SYM = {
-common: {
-tag: HARDWARE_MODULE_TAG,
-version_major: 1,
-version_minor: 0,
-id: CAMERA_HARDWARE_MODULE_ID,
-name: "V4L2 CameraHal Module",
-author: "Linaro",
-methods: &camera_module_methods,
-dso: NULL, /* remove compilation warnings */
-reserved: {0}, /* remove compilation warnings */
-        },
-get_number_of_cameras: camera_get_number_of_cameras,
-get_camera_info: camera_get_camera_info,
+  common: {
+    tag: HARDWARE_MODULE_TAG,
+    version_major: 1,
+    version_minor: 0,
+    id: CAMERA_HARDWARE_MODULE_ID,
+    name: "V4L2 CameraHal Module - IRIS",
+    author: "STMicroelectronics",
+    methods: &camera_module_methods,
+    dso: NULL, /* remove compilation warnings */
+    reserved: {0}, /* remove compilation warnings */
+    
+  },
+  get_number_of_cameras: camera_get_number_of_cameras,
+  get_camera_info: camera_get_camera_info,
 };
 
 typedef struct V4L2_camera_device {
@@ -403,7 +404,7 @@ fail:
 int camera_get_number_of_cameras(void)
 {
     LOG_FUNCTION_NAME
-    int num_cameras = 1;
+    int num_cameras = 2;
     return num_cameras;
 }
 

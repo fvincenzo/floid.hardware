@@ -100,7 +100,7 @@ private:
         }
     };
 
-    void initDefaultParameters();
+    void initDefaultParameters(int CameraID);
 
     int previewThread();
 

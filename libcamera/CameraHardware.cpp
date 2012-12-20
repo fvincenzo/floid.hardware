@@ -41,11 +41,17 @@
 
 #define EXIF_FILE_SIZE 28800
 
+#define VIDEO_DEVICE_0 "/dev/video0"
+#define VIDEO_DEVICE_1 "/dev/video1"
+
+//Define Cameras
+#define CAMERA_BF 0 //Back Camera
+#define CAMERA_FF 1
+
 namespace android {
 
     CameraHardware::CameraHardware(int cameraId)
-        : mCameraId(cameraId),
-        mParameters(),
+        : mParameters(),
         mPreviewHeap(0),
         mPreviewRunning(false),
         mRecordRunning(false),
@@ -56,13 +62,27 @@ namespace android {
         mMsgEnabled(0)
     {
         mNativeWindow=NULL;
-        initDefaultParameters();
+        initDefaultParameters(cameraId);
     }
 
-    void CameraHardware::initDefaultParameters()
+    void CameraHardware::initDefaultParameters(int CameraID)
     {
         CameraParameters p;
 
+	/*
+	 * Configure Camera specific parameters
+	 * The cameras are of same type then we don't need to configure
+	 * per Camera specific parameters.
+	 */
+	mCameraId = CameraID;
+	if(mCameraId == CAMERA_FF)
+	{
+	  LOGD("Front Camera is selected\n");
+	} else {
+	  LOGD("Back Camera is selected\n");
+	}
+	
+	//Configure generic Cameras parameters
         p.set(CameraParameters::KEY_SUPPORTED_PREVIEW_FRAME_RATES, "15,30");
         p.setPreviewFrameRate(30);
 
@@ -274,14 +294,13 @@ namespace android {
             mPreviewHeap = 0;
         }
         mPreviewHeap = mRequestMemory(-1, framesize, 1, NULL);
-
-        for( i=0; i<10; i++) {
-            sprintf(devnode,"/dev/video%d",i);
-            LOGI("trying the node %s width=%d height=%d \n",devnode,width,height);
-            ret = camera.Open(devnode, width, height, PIXEL_FORMAT);
-            if( ret >= 0)
-                break;
-        }
+        
+        if(mCameraId==CAMERA_FF)
+	{
+	  ret = camera.Open(VIDEO_DEVICE_1, width, height, PIXEL_FORMAT);
+	} else {
+	  ret = camera.Open(VIDEO_DEVICE_0, width, height, PIXEL_FORMAT);
+	}
 
         if( ret < 0)
             return -1;
@@ -424,13 +443,12 @@ namespace android {
         mParameters.getPictureSize(&width, &height);
         LOGD("Picture Size: Width = %d \t Height = %d", width, height);
 
-        for(i=0; i<10; i++) {
-            sprintf(devnode,"/dev/video%d",i);
-            LOGI("trying the node %s \n",devnode);
-            ret = camera.Open(devnode, width, height, PIXEL_FORMAT);
-            if( ret >= 0)
-                break;
-        }
+	if(mCameraId==CAMERA_FF)
+	{
+	  ret = camera.Open(VIDEO_DEVICE_1, width, height, PIXEL_FORMAT);
+	} else {
+	  ret = camera.Open(VIDEO_DEVICE_0, width, height, PIXEL_FORMAT);
+	}
 
         if( ret < 0)
             return -1;
