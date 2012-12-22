@@ -41,8 +41,8 @@
 
 #define EXIF_FILE_SIZE 28800
 
-#define VIDEO_DEVICE_0 "/dev/video0"
-#define VIDEO_DEVICE_1 "/dev/video1"
+#define VIDEO_DEVICE_0 "/dev/video0" //Front Camera
+#define VIDEO_DEVICE_1 "/dev/video1" //Rear Camera
 
 //Define Cameras
 #define CAMERA_BF 0 //Back Camera
@@ -81,7 +81,7 @@ namespace android {
 	} else {
 	  LOGD("Back Camera is selected\n");
 	}
-	
+	LOGD("Camera id = %d\n",CameraID);
 	//Configure generic Cameras parameters
         p.set(CameraParameters::KEY_SUPPORTED_PREVIEW_FRAME_RATES, "15,30");
         p.setPreviewFrameRate(30);
@@ -297,9 +297,11 @@ namespace android {
         
         if(mCameraId==CAMERA_FF)
 	{
-	  ret = camera.Open(VIDEO_DEVICE_1, width, height, PIXEL_FORMAT);
-	} else {
 	  ret = camera.Open(VIDEO_DEVICE_0, width, height, PIXEL_FORMAT);
+	  LOGD("Open %s device node\n", VIDEO_DEVICE_1);
+	} else {
+	  ret = camera.Open(VIDEO_DEVICE_1, width, height, PIXEL_FORMAT);
+	  LOGD("Open %s device node\n", VIDEO_DEVICE_0);
 	}
 
         if( ret < 0)
@@ -445,9 +447,11 @@ namespace android {
 
 	if(mCameraId==CAMERA_FF)
 	{
-	  ret = camera.Open(VIDEO_DEVICE_1, width, height, PIXEL_FORMAT);
-	} else {
 	  ret = camera.Open(VIDEO_DEVICE_0, width, height, PIXEL_FORMAT);
+	  LOGD("Open %s device node\n", VIDEO_DEVICE_1);
+	} else {
+	  ret = camera.Open(VIDEO_DEVICE_1, width, height, PIXEL_FORMAT);
+	  LOGD("Open %s device node\n", VIDEO_DEVICE_0);
 	}
 
         if( ret < 0)
