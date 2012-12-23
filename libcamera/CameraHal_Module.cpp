@@ -380,10 +380,8 @@ int camera_device_open(const hw_module_t* module, const char* name,
 
         *device = &camera_device->base.common;
 
-        // -------- TI specific stuff --------
-
         camera_device->cameraid = cameraid;
-        V4L2CameraHardware = new CameraHardware(0);
+        V4L2CameraHardware = new CameraHardware(cameraid);
     }
 
     return rv;
