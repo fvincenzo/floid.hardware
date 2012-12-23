@@ -298,10 +298,10 @@ namespace android {
         if(mCameraId==CAMERA_FF)
 	{
 	  ret = camera.Open(VIDEO_DEVICE_0, width, height, PIXEL_FORMAT);
-	  LOGD("Open %s device node\n", VIDEO_DEVICE_1);
+	  LOGD("Open %s device node\n", VIDEO_DEVICE_0);
 	} else {
 	  ret = camera.Open(VIDEO_DEVICE_1, width, height, PIXEL_FORMAT);
-	  LOGD("Open %s device node\n", VIDEO_DEVICE_0);
+	  LOGD("Open %s device node\n", VIDEO_DEVICE_1);
 	}
 
         if( ret < 0)
@@ -448,10 +448,10 @@ namespace android {
 	if(mCameraId==CAMERA_FF)
 	{
 	  ret = camera.Open(VIDEO_DEVICE_0, width, height, PIXEL_FORMAT);
-	  LOGD("Open %s device node\n", VIDEO_DEVICE_1);
+	  LOGD("Open %s device node\n", VIDEO_DEVICE_0);
 	} else {
 	  ret = camera.Open(VIDEO_DEVICE_1, width, height, PIXEL_FORMAT);
-	  LOGD("Open %s device node\n", VIDEO_DEVICE_0);
+	  LOGD("Open %s device node\n", VIDEO_DEVICE_1);
 	}
 
         if( ret < 0)
