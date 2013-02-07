@@ -77,6 +77,9 @@ unsigned int alloc_method = MEMALLOC_DYNAMIC;
 /* memory size in MBs for MEMALLOC_DYNAMIC */
 unsigned int alloc_size = 55;
 
+/* memory base address */
+unsigned int start_address = HLINA_START_ADDRESS;
+
 //#define DEBUG_MEM_ALLOCATED
 #ifdef DEBUG_MEM_ALLOCATED
 static unsigned allocated_size = 0;
@@ -87,8 +90,9 @@ static int memalloc_major = 0;  /* dynamic */
 int id[MAX_OPEN] = { ID_UNUSED };
 
 /* module_param(name, type, perm) */
-module_param(alloc_method, uint, 0);
-module_param(alloc_size, uint, 0);
+module_param(alloc_method, uint, S_IRUSR | S_IWUSR | S_IWGRP | S_IRGRP | S_IROTH);
+module_param(alloc_size, uint, S_IRUSR | S_IWUSR | S_IWGRP | S_IRGRP | S_IROTH);
+module_param(start_address, uint, S_IRUSR | S_IWUSR | S_IWGRP | S_IRGRP | S_IROTH);
 
 /* here's all the must remember stuff */
 struct allocation
@@ -433,7 +437,7 @@ int __init memalloc_init(void)
 
     PDEBUG("module init\n");
     printk("memalloc: 8190 Linear Memory Allocator, %s \n", "$Revision: 1.14 $");
-    printk("memalloc: linear memory base = 0x%08x \n", HLINA_START_ADDRESS);
+    printk("memalloc: linear memory base = 0x%08x \n", start_address);
 
     switch (alloc_method)
     {
@@ -698,7 +702,7 @@ static int FreeMemory(unsigned long busaddr)
 void ResetMems(void)
 {
     int i = 0;
-    unsigned int ba = HLINA_START_ADDRESS;
+    unsigned int ba = start_address;
 
     for(i = 0; i < chunks; i++)
     {
@@ -713,10 +717,10 @@ void ResetMems(void)
     }
 
     printk("memalloc: %d bytes (%dMB) configured. Check RAM size!\n",
-           ba - (unsigned int)(HLINA_START_ADDRESS),
-          (ba - (unsigned int)(HLINA_START_ADDRESS)) / (1024 * 1024));
+           ba - (unsigned int)(start_address),
+          (ba - (unsigned int)(start_address)) / (1024 * 1024));
 
-    if(ba - (unsigned int)(HLINA_START_ADDRESS) > 96 * 1024 * 1024)
+    if(ba - (unsigned int)(start_address) > 96 * 1024 * 1024)
     {
         PDEBUG("MEMALLOC ERROR: MEMORY ALLOC BUG\n");
     }
